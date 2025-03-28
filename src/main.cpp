@@ -42,6 +42,12 @@ volatile int counter3Value = 0;
 const int COUNTER1_PIN = 14;
 const int COUNTER2_PIN = 27;
 const int COUNTER3_PIN = 26;
+const int LED_PIN = 2;
+
+// Wi-Fi LED blink variables
+unsigned long lastBlinkMillis = 0;
+const unsigned long blinkInterval = 500; // 500ms интервал мигания
+bool ledState = false;
 
 // Debounce variables
 unsigned long lastDebounceTime1 = 0;
@@ -106,12 +112,31 @@ void IRAM_ATTR counter3ISR() {
 void initWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi ..");
-  while (WiFi.status() != WL_CONNECTED) {
+  
+  unsigned long startAttemptTime = millis();
+  const unsigned long wifiTimeout = 30000; // 30 секунд таймаут
+
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < wifiTimeout) {
     Serial.print('.');
-    delay(1000);
+    // Мигаем светодиодом во время попытки подключения
+    if (millis() - lastBlinkMillis >= blinkInterval) {
+      ledState = !ledState;
+      digitalWrite(LED_PIN, ledState);
+      lastBlinkMillis = millis();
+    }
+    delay(500);
   }
-  Serial.println(WiFi.localIP());
-  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println();
+    Serial.println(WiFi.localIP());
+    Serial.println("WiFi connected");
+    digitalWrite(LED_PIN, HIGH); // Постоянно горит при успешном подключении
+  } else {
+    Serial.println();
+    Serial.println("Failed to connect to WiFi");
+    digitalWrite(LED_PIN, LOW); // Выключаем светодиод при ошибке
+  }
 }
 
 // Function to get formatted time string
@@ -143,6 +168,8 @@ void setup() {
   pinMode(COUNTER1_PIN, INPUT_PULLUP);
   pinMode(COUNTER2_PIN, INPUT_PULLUP);
   pinMode(COUNTER3_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
   // Attach interrupts
   attachInterrupt(digitalPinToInterrupt(COUNTER1_PIN), counter1ISR, FALLING);
@@ -203,6 +230,22 @@ void setup() {
 }
 
 void loop() {
+  // Check WiFi status and update LED
+  if (WiFi.status() == WL_CONNECTED) {
+    // Мигаем светодиодом, если подключены
+    if (millis() - lastBlinkMillis >= blinkInterval) {
+      ledState = !ledState;
+      digitalWrite(LED_PIN, ledState);
+      lastBlinkMillis = millis();
+    }
+  } else {
+    // Постоянно горит при ошибке подключения
+    digitalWrite(LED_PIN, HIGH);
+    // Пытаемся переподключиться
+    Serial.println("WiFi disconnected, attempting to reconnect...");
+    initWiFi();
+  }
+  
   // Synchronize time every hour
   if (millis() - lastSyncMillis >= 3600000) {
     unsigned long ntpTime = getTime();
