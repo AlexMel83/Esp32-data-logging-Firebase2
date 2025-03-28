@@ -1,0 +1,22 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <IPAddress.h>
+#include <Arduino.h>
+
+// Змінні середовища
+// Insert your network credentials
+#define WIFI_SSID "xxxxxx"
+#define WIFI_PASSWORD "xxxxxx"
+
+// Insert Firebase project API Key
+#define API_KEY "xxxxxx"
+
+// Insert Authorized Email and Corresponding Password
+#define USER_EMAIL "xxxxxx"
+#define USER_PASSWORD "xxxxxx"
+
+// Insert RTDB URLefine the RTDB URL
+#define DATABASE_URL "https://xxxxxx-default-rtdb.europe-west1.firebasedatabase.app"
+
+#endif // CONFIG_H
