@@ -1,0 +1,12 @@
+const firebaseConfig = {
+  apiKey: "xxxxxxxxx",
+  authDomain: "esp32-database-loging.firebaseapp.com",
+  databaseURL:
+    "https://esp32-database-loging-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "esp32-database-loging",
+  storageBucket: "esp32-database-loging.firebasestorage.app",
+  messagingSenderId: "188906740513",
+  appId: "1:188906740513:web:8b6a79f104530efe1cbc60",
+};
+
+export default firebaseConfig;
