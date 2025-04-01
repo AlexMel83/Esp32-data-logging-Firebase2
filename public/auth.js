@@ -1,32 +1,31 @@
 document.addEventListener("DOMContentLoaded", function () {
-  // listen for auth status changes
+  const auth = firebase.auth();
+
+  // Listen for auth status changes
   auth.onAuthStateChanged((user) => {
     if (user) {
       console.log("user logged in");
       console.log(user);
-      setupUI(user);
-      var uid = user.uid;
-      console.log(uid);
+      setupUI(user); // Вызываем setupUI из index.js
+      const uid = user.uid;
+      console.log("User UID:", uid);
     } else {
       console.log("user logged out");
-      setupUI();
+      setupUI(); // Вызываем setupUI из index.js
     }
   });
 
-  // login
+  // Login
   const loginForm = document.querySelector("#login-form");
   loginForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    // get user info
     const email = loginForm["input-email"].value;
     const password = loginForm["input-password"].value;
-    // log the user in
     auth
       .signInWithEmailAndPassword(email, password)
       .then((cred) => {
-        // close the login modal & reset form
         loginForm.reset();
-        console.log(email);
+        console.log("Logged in:", email);
       })
       .catch((error) => {
         const errorCode = error.code;
@@ -36,7 +35,7 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   });
 
-  // logout
+  // Logout
   const logout = document.querySelector("#logout-link");
   logout.addEventListener("click", (e) => {
     e.preventDefault();

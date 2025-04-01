@@ -70,7 +70,7 @@ const unsigned long debounceDelay = 600;
 
 // Timer variables
 unsigned long sendDataPrevMillis = 0;
-unsigned long timerDelay = 20000;
+unsigned long timerDelay = 5000;
 
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 7200;  // UTC+2 для Украины
@@ -239,13 +239,13 @@ void setup() {
   lastSyncMillis = millis();
 
   // Форматирование SPIFFS
-  DEBUG_PRINT("Formatting SPIFFS...");
-  if (SPIFFS.format()) {
-    DEBUG_PRINT("SPIFFS formatted successfully");
-  } else {
-    DEBUG_PRINT("SPIFFS formatting failed");
-    while (true);
-  }
+  // DEBUG_PRINT("Formatting SPIFFS...");
+  // if (SPIFFS.format()) {
+  //   DEBUG_PRINT("SPIFFS formatted successfully");
+  // } else {
+  //   DEBUG_PRINT("SPIFFS formatting failed");
+  //   while (true);
+  // }
 
   // Монтирование SPIFFS после форматирования
   if (!SPIFFS.begin(true)) {

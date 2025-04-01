@@ -1,12 +1,12 @@
-// convert epochtime to JavaScript Date object
+// Convert epoch time to JavaScript Date object
 function epochToJsDate(epochTime) {
   return new Date(epochTime * 1000);
 }
 
-// convert time to human-readable format YYYY/MM/DD HH:MM:SS
+// Convert time to human-readable format YYYY/MM/DD HH:MM:SS
 function epochToDateTime(epochTime) {
   var epochDate = new Date(epochToJsDate(epochTime));
-  var dateTime =
+  return (
     epochDate.getFullYear() +
     "/" +
     ("00" + (epochDate.getMonth() + 1)).slice(-2) +
@@ -17,11 +17,11 @@ function epochToDateTime(epochTime) {
     ":" +
     ("00" + epochDate.getMinutes()).slice(-2) +
     ":" +
-    ("00" + epochDate.getSeconds()).slice(-2);
-  return dateTime;
+    ("00" + epochDate.getSeconds()).slice(-2)
+  );
 }
 
-// function to plot values on charts
+// Function to plot values on charts
 function plotValues(chart, timestamp, value) {
   var x = epochToJsDate(timestamp).getTime();
   var y = Number(value);
@@ -58,8 +58,6 @@ const gaugesCheckboxElement = document.querySelector(
 const chartsCheckboxElement = document.querySelector(
   "input[name=charts-checkbox]"
 );
-
-// DOM elements for counter readings
 const cardsReadingsElement = document.querySelector("#cards-div");
 const gaugesReadingsElement = document.querySelector("#gauges-div");
 const chartsDivElement = document.querySelector("#charts-div");
@@ -68,8 +66,8 @@ const counter2Element = document.getElementById("hum");
 const counter3Element = document.getElementById("pres");
 const updateElement = document.getElementById("lastUpdate");
 
-// MANAGE LOGIN/LOGOUT UI
-const setupUI = (user) => {
+// Manage UI based on login state
+function setupUI(user) {
   console.log("setupUI called with user:", user);
   if (user) {
     loginElement.style.display = "none";
@@ -78,8 +76,8 @@ const setupUI = (user) => {
     userDetailsElement.style.display = "block";
     userDetailsElement.innerHTML = user.email;
 
-    var uid = user.uid;
-    console.log(uid);
+    const uid = user.uid;
+    console.log("User UID:", uid);
 
     const dbRef = firebase.database().ref(`UsersData/${uid}/counter_events`);
     const counterValuesRef = firebase
@@ -87,7 +85,7 @@ const setupUI = (user) => {
       .ref(`UsersData/${uid}/counter_values`);
     const chartRef = firebase.database().ref(`UsersData/${uid}/charts/range`);
 
-    // Инициализируем gauges
+    // Initialize gauges
     var gaugeT = createTemperatureGauge();
     var gaugeH = createHumidityGauge();
     var gaugeP = createPressureGauge();
@@ -95,16 +93,17 @@ const setupUI = (user) => {
     gaugeH.draw();
     gaugeP.draw();
 
-    // Устанавливаем изначальное состояние charts-div
+    // Set initial state of charts-div
     chartsDivElement.style.display = chartsCheckboxElement.checked
       ? "block"
       : "none";
 
+    // Update counter values
     counterValuesRef.on("value", (snapshot) => {
       const counterValues = snapshot.val();
       if (!counterValues) return;
 
-      console.log("Последние значения счетчиков:", counterValues);
+      console.log("Latest counter values:", counterValues);
 
       counter1Element.innerHTML = counterValues.counter1;
       counter2Element.innerHTML = counterValues.counter2;
@@ -121,6 +120,7 @@ const setupUI = (user) => {
       plotValues(chartP, timestamp, counterValues.counter3);
     });
 
+    // Handle chart range
     let chartRange = 10;
     chartRef.on("value", (snapshot) => {
       chartRange = Number(snapshot.val()) || 10;
@@ -154,6 +154,7 @@ const setupUI = (user) => {
       console.error("charts-range input not found in DOM");
     }
 
+    // Checkbox event listeners
     cardsCheckboxElement.addEventListener("change", (e) => {
       cardsReadingsElement.style.display = e.target.checked ? "block" : "none";
     });
@@ -164,6 +165,7 @@ const setupUI = (user) => {
       chartsDivElement.style.display = e.target.checked ? "block" : "none";
     });
 
+    // Delete data functionality
     deleteButtonElement.addEventListener("click", (e) => {
       e.preventDefault();
       deleteModalElement.style.display = "block";
@@ -176,6 +178,7 @@ const setupUI = (user) => {
       deleteModalElement.style.display = "none";
     });
 
+    // Table functionality
     var lastReadingTimestamp;
     function createTable() {
       var firstRun = true;
@@ -185,8 +188,7 @@ const setupUI = (user) => {
         .on("child_added", (snapshot) => {
           if (snapshot.exists()) {
             var jsonData = snapshot.val();
-            var content = "";
-            content += "<tr>";
+            var content = "<tr>";
             content += "<td>" + jsonData.timestamp + "</td>";
             content +=
               "<td>" + (jsonData.counter_id === 1 ? "1" : "-") + "</td>";
@@ -221,8 +223,7 @@ const setupUI = (user) => {
             var firstTime = true;
             reversedList.forEach((element) => {
               if (!firstTime) {
-                var content = "";
-                content += "<tr>";
+                var content = "<tr>";
                 content += "<td>" + element.timestamp + "</td>";
                 content +=
                   "<td>" + (element.counter_id === 1 ? "1" : "-") + "</td>";
@@ -260,4 +261,4 @@ const setupUI = (user) => {
     userDetailsElement.style.display = "none";
     contentElement.style.display = "none";
   }
-};
+}
