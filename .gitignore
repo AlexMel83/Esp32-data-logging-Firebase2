@@ -5,4 +5,5 @@
 .vscode/ipch
 .env
 src/config.h
+public/firebase-config.js
 public/scripts/firebase-config.js

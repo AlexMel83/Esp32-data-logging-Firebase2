@@ -3,7 +3,7 @@
 #include "SPIFFS.h"
 #include <WiFi.h>
 #include <WebServer.h>
-#include <FTPServer.h> // Новая библиотека
+#include <ESP8266FtpServer.h> // Используем nailbuster/ESP8266FtpServer
 #include <Firebase_ESP_Client.h>
 #include "routes.h"
 #include "time.h"
@@ -21,9 +21,6 @@
 // Define servers
 WebServer http(80);
 FtpServer ftpSrv;
-#define FTP_FILESYSTEM_SD 0
-#define FTP_FILESYSTEM_SPIFFS 1
-#define FTP_FILESYSTEM FTP_FILESYSTEM_SPIFFS
 
 // Define Firebase objects
 FirebaseData fbdo;
@@ -241,6 +238,32 @@ void setup() {
   lastSyncTime = currentTimestamp;
   lastSyncMillis = millis();
 
+  // Форматирование SPIFFS
+  DEBUG_PRINT("Formatting SPIFFS...");
+  if (SPIFFS.format()) {
+    DEBUG_PRINT("SPIFFS formatted successfully");
+  } else {
+    DEBUG_PRINT("SPIFFS formatting failed");
+    while (true);
+  }
+
+  // Монтирование SPIFFS после форматирования
+  if (!SPIFFS.begin(true)) {
+    DEBUG_PRINT("SPIFFS Mount Failed");
+    while (true);
+  }
+  DEBUG_PRINT("SPIFFS Mounted successfully");
+  listSPIFFSFiles(); // Должно быть пусто после форматирования
+
+  // Проверка объёма
+  if (SPIFFS.totalBytes() == 0) {
+    DEBUG_PRINT("SPIFFS not available or empty!");
+  } else {
+    String message = "SPIFFS total bytes: ";
+    message.concat(SPIFFS.totalBytes());
+    DEBUG_PRINT(message);
+  }
+
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
   config.token_status_callback = tokenStatusCallback;
@@ -273,15 +296,16 @@ void setup() {
   countersPath.concat(uid);
   countersPath.concat("/counter_values");
 
-  if (!SPIFFS.begin(true)) {
-    DEBUG_PRINT("SPIFFS Mount Failed");
-    while (true);
-  }
-  DEBUG_PRINT("SPIFFS Mounted successfully");
-  listSPIFFSFiles();
-
   http.begin();
   ftpSrv.begin("relay", "relay");
+  DEBUG_PRINT("FTP server started @ " + WiFi.localIP().toString());
+  File root = SPIFFS.open("/");
+  if (!root) {
+    DEBUG_PRINT("Failed to open SPIFFS root for FTP check");
+  } else {
+    DEBUG_PRINT("SPIFFS root opened successfully for FTP");
+    root.close();
+  }
   DEBUG_PRINT("Server listening");
 
   setupRoutes();
@@ -289,7 +313,7 @@ void setup() {
 
 void loop() {
   http.handleClient();
-  ftpSrv.handleFTP();
+  ftpSrv.handleFTP(); // Обработка FTP-запросов
 
   static unsigned long lastCheck = 0;
   if (millis() - lastCheck > 10000) {
