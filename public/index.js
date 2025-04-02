@@ -79,10 +79,7 @@ function setupUI(user) {
     const uid = user.uid;
     console.log("User UID:", uid);
 
-    const dbRef = firebase.database().ref(`UsersData/${uid}/counter_events`);
-    const counterValuesRef = firebase
-      .database()
-      .ref(`UsersData/${uid}/counter_values`);
+    const dbRef = firebase.database().ref(`UsersData/${uid}`);
     const chartRef = firebase.database().ref(`UsersData/${uid}/charts/range`);
 
     // Initialize gauges
@@ -98,52 +95,55 @@ function setupUI(user) {
       ? "block"
       : "none";
 
-    // Update counter values
-    counterValuesRef.on("value", (snapshot) => {
-      const counterValues = snapshot.val();
-      if (!counterValues) return;
+    // Update counter values for cards and gauges
+    dbRef.on("value", (snapshot) => {
+      const data = snapshot.val() || {};
+      const count1 = Object.keys(data["count-1"] || {}).length;
+      const count2 = Object.keys(data["count-2"] || {}).length;
+      const count3 = Object.keys(data["count-3"] || {}).length;
 
-      console.log("Latest counter values:", counterValues);
+      counter1Element.innerHTML = count1;
+      counter2Element.innerHTML = count2;
+      counter3Element.innerHTML = count3;
+      gaugeT.value = count1;
+      gaugeH.value = count2;
+      gaugeP.value = count3;
 
-      counter1Element.innerHTML = counterValues.counter1;
-      counter2Element.innerHTML = counterValues.counter2;
-      counter3Element.innerHTML = counterValues.counter3;
-      updateElement.innerHTML = counterValues.last_update;
-
-      gaugeT.value = counterValues.counter1;
-      gaugeH.value = counterValues.counter2;
-      gaugeP.value = counterValues.counter3;
-
-      const timestamp = new Date(counterValues.last_update).getTime() / 1000;
-      plotValues(chartT, timestamp, counterValues.counter1);
-      plotValues(chartH, timestamp, counterValues.counter2);
-      plotValues(chartP, timestamp, counterValues.counter3);
+      // Find the latest timestamp across all counters
+      let latestTimestamp = 0;
+      ["count-1", "count-2", "count-3"].forEach((counter) => {
+        const events = data[counter] || {};
+        Object.keys(events).forEach((key) => {
+          const epochTime = Number(key.split("_")[0]);
+          if (epochTime > latestTimestamp) latestTimestamp = epochTime;
+        });
+      });
+      updateElement.innerHTML = latestTimestamp
+        ? epochToDateTime(latestTimestamp)
+        : "N/A";
     });
 
-    // Handle chart range
+    // Handle chart range and plot events
     let chartRange = 10;
     chartRef.on("value", (snapshot) => {
       chartRange = Number(snapshot.val()) || 10;
       console.log("Chart range:", chartRange);
 
-      dbRef
-        .orderByKey()
-        .limitToLast(chartRange)
-        .on("child_added", (snapshot) => {
-          const eventData = snapshot.val();
-          if (!eventData) return;
-
-          const timestamp = eventData.epoch_time;
-          const counterId = eventData.counter_id;
-
-          if (counterId === 1) {
-            plotValues(chartT, timestamp, 1);
-          } else if (counterId === 2) {
-            plotValues(chartH, timestamp, 1);
-          } else if (counterId === 3) {
-            plotValues(chartP, timestamp, 1);
-          }
-        });
+      ["count-1", "count-2", "count-3"].forEach((counter, index) => {
+        const counterRef = firebase
+          .database()
+          .ref(`UsersData/${uid}/${counter}`);
+        counterRef
+          .orderByKey()
+          .limitToLast(chartRange)
+          .on("child_added", (snapshot) => {
+            const key = snapshot.key;
+            const epochTime = Number(key.split("_")[0]);
+            if (index === 0) plotValues(chartT, epochTime, 1);
+            else if (index === 1) plotValues(chartH, epochTime, 1);
+            else if (index === 2) plotValues(chartP, epochTime, 1);
+          });
+      });
     });
 
     if (chartsRangeInputElement) {
@@ -174,70 +174,74 @@ function setupUI(user) {
     deleteDataFormElement.addEventListener("submit", (e) => {
       e.preventDefault();
       dbRef.remove();
-      counterValuesRef.remove();
       deleteModalElement.style.display = "none";
     });
 
     // Table functionality
-    var lastReadingTimestamp;
+    var lastReadingTimestamps = {
+      "count-1": null,
+      "count-2": null,
+      "count-3": null,
+    };
     function createTable() {
-      var firstRun = true;
-      dbRef
-        .orderByKey()
-        .limitToLast(100)
-        .on("child_added", (snapshot) => {
-          if (snapshot.exists()) {
-            var jsonData = snapshot.val();
+      ["count-1", "count-2", "count-3"].forEach((counter, index) => {
+        const counterRef = firebase
+          .database()
+          .ref(`UsersData/${uid}/${counter}`);
+        counterRef
+          .orderByKey()
+          .limitToLast(100)
+          .on("child_added", (snapshot) => {
+            const key = snapshot.key;
+            const epochTime = Number(key.split("_")[0]);
+            const timestamp = epochToDateTime(epochTime);
             var content = "<tr>";
-            content += "<td>" + jsonData.timestamp + "</td>";
-            content +=
-              "<td>" + (jsonData.counter_id === 1 ? "1" : "-") + "</td>";
-            content +=
-              "<td>" + (jsonData.counter_id === 2 ? "1" : "-") + "</td>";
-            content +=
-              "<td>" + (jsonData.counter_id === 3 ? "1" : "-") + "</td>";
+            content += "<td>" + timestamp + "</td>";
+            content += "<td>" + (index === 0 ? "1" : "-") + "</td>";
+            content += "<td>" + (index === 1 ? "1" : "-") + "</td>";
+            content += "<td>" + (index === 2 ? "1" : "-") + "</td>";
             content += "</tr>";
             $("#tbody").prepend(content);
-            if (firstRun) {
-              lastReadingTimestamp = jsonData.epoch_time;
-              firstRun = false;
-            }
-          }
-        });
+            if (!lastReadingTimestamps[counter])
+              lastReadingTimestamps[counter] = epochTime;
+          });
+      });
     }
 
     function appendToTable() {
-      var dataList = [];
-      dbRef
-        .orderByKey()
-        .limitToLast(100)
-        .endAt(lastReadingTimestamp.toString())
-        .once("value", (snapshot) => {
-          if (snapshot.exists()) {
-            snapshot.forEach((element) => {
-              dataList.push(element.val());
-            });
-            lastReadingTimestamp = dataList[0].epoch_time;
-            var reversedList = dataList.reverse();
-
-            var firstTime = true;
-            reversedList.forEach((element) => {
-              if (!firstTime) {
+      ["count-1", "count-2", "count-3"].forEach((counter, index) => {
+        const counterRef = firebase
+          .database()
+          .ref(`UsersData/${uid}/${counter}`);
+        counterRef
+          .orderByKey()
+          .endAt(lastReadingTimestamps[counter].toString())
+          .limitToLast(100)
+          .once("value", (snapshot) => {
+            if (snapshot.exists()) {
+              const events = snapshot.val();
+              const keys = Object.keys(events).sort().reverse();
+              keys.forEach((key, i) => {
+                if (
+                  i === 0 &&
+                  key === lastReadingTimestamps[counter].toString()
+                )
+                  return; // Skip the last known timestamp
+                const epochTime = Number(key.split("_")[0]);
+                const timestamp = epochToDateTime(epochTime);
                 var content = "<tr>";
-                content += "<td>" + element.timestamp + "</td>";
-                content +=
-                  "<td>" + (element.counter_id === 1 ? "1" : "-") + "</td>";
-                content +=
-                  "<td>" + (element.counter_id === 2 ? "1" : "-") + "</td>";
-                content +=
-                  "<td>" + (element.counter_id === 3 ? "1" : "-") + "</td>";
+                content += "<td>" + timestamp + "</td>";
+                content += "<td>" + (index === 0 ? "1" : "-") + "</td>";
+                content += "<td>" + (index === 1 ? "1" : "-") + "</td>";
+                content += "<td>" + (index === 2 ? "1" : "-") + "</td>";
                 content += "</tr>";
                 $("#tbody").append(content);
-              }
-              firstTime = false;
-            });
-          }
-        });
+                if (i === keys.length - 1)
+                  lastReadingTimestamps[counter] = epochTime;
+              });
+            }
+          });
+      });
     }
 
     viewDataButtonElement.addEventListener("click", () => {
@@ -254,6 +258,7 @@ function setupUI(user) {
       tableContainerElement.style.display = "none";
       viewDataButtonElement.style.display = "inline-block";
       hideDataButtonElement.style.display = "none";
+      loadDataButtonElement.style.display = "none";
     });
   } else {
     loginElement.style.display = "block";

@@ -3,7 +3,7 @@
 #include "SPIFFS.h"
 #include <WiFi.h>
 #include <WebServer.h>
-#include <ESP8266FtpServer.h> // Используем nailbuster/ESP8266FtpServer
+#include <ESP8266FtpServer.h>
 #include <Firebase_ESP_Client.h>
 #include "routes.h"
 #include "time.h"
@@ -29,10 +29,6 @@ FirebaseConfig config;
 
 // Variable to save USER UID
 String uid;
-
-// Database paths
-String databasePath;
-String countersPath;
 
 // Structure to hold counter event data
 struct CounterEvent {
@@ -121,9 +117,11 @@ void IRAM_ATTR counter3ISR() {
   }
 }
 
-// Initialize WiFi
+// Initialize WiFi с явным указанием DNS
 void initWiFi() {
-  WiFi.config(local_ip, gateway, subnet, dns);
+  IPAddress primaryDNS(8, 8, 8, 8);   // Google DNS 1
+  IPAddress secondaryDNS(8, 8, 4, 4); // Google DNS 2
+  WiFi.config(local_ip, gateway, subnet, primaryDNS, secondaryDNS);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi ..");
   
@@ -144,6 +142,8 @@ void initWiFi() {
     Serial.println(WiFi.localIP());
     Serial.println("WiFi connected");
     digitalWrite(LED_PIN, HIGH);
+    DEBUG_PRINT("DNS 1: " + WiFi.dnsIP(0).toString());
+    DEBUG_PRINT("DNS 2: " + WiFi.dnsIP(1).toString());
   } else {
     Serial.println();
     Serial.println("Failed to connect to WiFi, restarting...");
@@ -175,34 +175,6 @@ unsigned long getTime() {
   return now;
 }
 
-void listSPIFFSFiles() {
-  File root = SPIFFS.open("/");
-  File file = root.openNextFile();
-  while (file) {
-    Serial.print("File: ");
-    Serial.print(file.name());
-    Serial.print(" | Size: ");
-    Serial.println(file.size());
-    file = root.openNextFile();
-  }
-  root.close();
-}
-
-void readSPIFFSFile(const char* path) {
-  File file = SPIFFS.open(path, "r");
-  if (!file) {
-    Serial.println("Failed to open file for reading");
-    return;
-  }
-  Serial.print("Reading file: ");
-  Serial.println(path);
-  while (file.available()) {
-    Serial.write(file.read());
-  }
-  Serial.println("\nEnd of file");
-  file.close();
-}
-
 void setup() {
   Serial.begin(115200);
 
@@ -232,37 +204,17 @@ void setup() {
     }
   }
   if (currentTimestamp == 0) {
-    DEBUG_PRINT("NTP sync failed, proceeding with default time");
-    currentTimestamp = millis() / 1000;
+    DEBUG_PRINT("NTP sync failed, using hardcoded time for testing");
+    currentTimestamp = 1743255292;
   }
   lastSyncTime = currentTimestamp;
   lastSyncMillis = millis();
 
-  // Форматирование SPIFFS
-  // DEBUG_PRINT("Formatting SPIFFS...");
-  // if (SPIFFS.format()) {
-  //   DEBUG_PRINT("SPIFFS formatted successfully");
-  // } else {
-  //   DEBUG_PRINT("SPIFFS formatting failed");
-  //   while (true);
-  // }
-
-  // Монтирование SPIFFS после форматирования
   if (!SPIFFS.begin(true)) {
     DEBUG_PRINT("SPIFFS Mount Failed");
     while (true);
   }
   DEBUG_PRINT("SPIFFS Mounted successfully");
-  listSPIFFSFiles(); // Должно быть пусто после форматирования
-
-  // Проверка объёма
-  if (SPIFFS.totalBytes() == 0) {
-    DEBUG_PRINT("SPIFFS not available or empty!");
-  } else {
-    String message = "SPIFFS total bytes: ";
-    message.concat(SPIFFS.totalBytes());
-    DEBUG_PRINT(message);
-  }
 
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
@@ -284,28 +236,13 @@ void setup() {
     delay(1000);
   }
   uid = auth.token.uid.c_str();
-  String message = "User UID: ";
-  message.concat(uid);
-  DEBUG_PRINT(message);
-
-  databasePath = "/UsersData/";
-  databasePath.concat(uid);
-  databasePath.concat("/counter_events");
-  
-  countersPath = "/UsersData/";
-  countersPath.concat(uid);
-  countersPath.concat("/counter_values");
+  String uidMessage = "User UID: ";
+  uidMessage.concat(uid);
+  DEBUG_PRINT(uidMessage);
 
   http.begin();
   ftpSrv.begin("relay", "relay");
   DEBUG_PRINT("FTP server started @ " + WiFi.localIP().toString());
-  File root = SPIFFS.open("/");
-  if (!root) {
-    DEBUG_PRINT("Failed to open SPIFFS root for FTP check");
-  } else {
-    DEBUG_PRINT("SPIFFS root opened successfully for FTP");
-    root.close();
-  }
   DEBUG_PRINT("Server listening");
 
   setupRoutes();
@@ -313,14 +250,7 @@ void setup() {
 
 void loop() {
   http.handleClient();
-  ftpSrv.handleFTP(); // Обработка FTP-запросов
-
-  static unsigned long lastCheck = 0;
-  if (millis() - lastCheck > 10000) {
-    DEBUG_PRINT("Listing SPIFFS files:");
-    listSPIFFSFiles();
-    lastCheck = millis();
-  }
+  ftpSrv.handleFTP();
 
   if (WiFi.status() == WL_CONNECTED) {
     if (millis() - lastBlinkMillis >= blinkInterval) {
@@ -359,6 +289,13 @@ void loop() {
 
   if (Firebase.ready() && (millis() - sendDataPrevMillis > timerDelay || sendDataPrevMillis == 0)) {
     sendDataPrevMillis = millis();
+
+    String queueStatus = "Queue head: ";
+    queueStatus.concat(String(queueHead));
+    queueStatus.concat(", tail: ");
+    queueStatus.concat(String(queueTail));
+    DEBUG_PRINT(queueStatus);
+
     while (queueHead != queueTail) {
       CounterEvent event;
       noInterrupts();
@@ -366,27 +303,28 @@ void loop() {
       queueHead = (queueHead + 1) % QUEUE_SIZE;
       interrupts();
 
-      FirebaseJson json;
-      String eventPath = databasePath;
+      String eventPath = "/UsersData/";
+      eventPath.concat(uid);
+      eventPath.concat("/count-");
+      eventPath.concat(String(event.counterId));
       eventPath.concat("/");
       eventPath.concat(String(event.timestamp));
-      eventPath.concat("_");
-      eventPath.concat(String(event.counterId));
-      json.set("/counter_id", event.counterId);
-      json.set("/timestamp", getFormattedTime(event.timestamp));
-      json.set("/epoch_time", event.timestamp);
-      String errorMessage = "Set event json... ";
-      errorMessage.concat(fbdo.errorReason());
-      DEBUG_PRINT(Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json) ? "Set event json... ok" : errorMessage);
-    }
 
-    FirebaseJson counterJson;
-    counterJson.set("/counter1", counter1Value);
-    counterJson.set("/counter2", counter2Value);
-    counterJson.set("/counter3", counter3Value);
-    counterJson.set("/last_update", getFormattedTime(currentTimestamp));
-    String errorMessage = "Set counter values... ";
-    errorMessage.concat(fbdo.errorReason());
-    DEBUG_PRINT(Firebase.RTDB.setJSON(&fbdo, countersPath.c_str(), &counterJson) ? "Set counter values... ok" : errorMessage);
+      FirebaseJson json;
+      json.set("counterValue", (event.counterId == 1) ? counter1Value : 
+                              (event.counterId == 2) ? counter2Value : counter3Value);
+
+      if (WiFi.status() == WL_CONNECTED) {
+        DEBUG_PRINT("Attempting to write to: " + eventPath);
+        if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json)) {
+          DEBUG_PRINT("Set event ok: " + eventPath);
+        } else {
+          DEBUG_PRINT("Set event failed: " + String(fbdo.errorReason()));
+          Firebase.reconnectWiFi(true);
+        }
+      } else {
+        DEBUG_PRINT("WiFi not connected, skipping Firebase write");
+      }
+    }
   }
 }
