@@ -84,10 +84,10 @@ function setupUI(user) {
 
     const dbRef = firebase.database().ref(`UsersData/${uid}`);
 
-    // Initialize gauges
-    var gaugeA = createTemperatureGauge();
-    var gaugeB = createHumidityGauge();
-    var gaugeC = createPressureGauge();
+    // Initialize gauges with initial value 0
+    var gaugeA = createTemperatureGauge(0);
+    var gaugeB = createHumidityGauge(0);
+    var gaugeC = createPressureGauge(0);
     gaugeA.draw();
     gaugeB.draw();
     gaugeC.draw();
@@ -125,9 +125,9 @@ function setupUI(user) {
       counter1Element.innerHTML = latestValues["count-1"];
       counter2Element.innerHTML = latestValues["count-2"];
       counter3Element.innerHTML = latestValues["count-3"];
-      gaugeA.value = latestValues["count-1"];
-      gaugeB.value = latestValues["count-2"];
-      gaugeC.value = latestValues["count-3"];
+      updateGauge(gaugeA, latestValues["count-1"]);
+      updateGauge(gaugeB, latestValues["count-2"]);
+      updateGauge(gaugeC, latestValues["count-3"]);
       updateElement.innerHTML = latestTimestamp
         ? epochToDateTime(latestTimestamp)
         : "N/A";
@@ -256,7 +256,6 @@ function setupUI(user) {
         const counterRef = firebase
           .database()
           .ref(`UsersData/${uid}/${counter}`);
-        // Проверяем, что lastReadingTimestamps инициализирован
         if (!lastReadingTimestamps[counter]) {
           console.warn(
             `lastReadingTimestamps[${counter}] is null, skipping append for this counter`
