@@ -48,9 +48,12 @@ volatile int counter2Value;
 volatile int counter3Value;
 
 // Pin definitions
-const int COUNTER1_PIN = 14;
-const int COUNTER2_PIN = 27;
-const int COUNTER3_PIN = 26;
+const int COUNTER1_PIN = 14; // Увеличивает counter1
+const int COUNTER2_PIN = 27; // Увеличивает counter2
+const int COUNTER3_PIN = 26; // Увеличивает counter3
+const int RESET1_PIN = 32;   // Сбрасывает counter1
+const int RESET2_PIN = 33;   // Сбрасывает counter2
+const int RESET3_PIN = 34;   // Сбрасывает counter3
 const int LED_PIN = 2;
 
 // Wi-Fi LED blink variables
@@ -62,6 +65,9 @@ bool ledState = false;
 unsigned long lastDebounceTime1 = 0;
 unsigned long lastDebounceTime2 = 0;
 unsigned long lastDebounceTime3 = 0;
+unsigned long lastResetTime1 = 0; // Для сброса
+unsigned long lastResetTime2 = 0;
+unsigned long lastResetTime3 = 0;
 const unsigned long debounceDelay = 600;
 
 // Timer variables
@@ -174,11 +180,14 @@ unsigned long getTime() {
 }
 
 void setup() {
-  Serial.begin(115200); // Инициализация Serial, но без ожидания
+  Serial.begin(115200);
 
   pinMode(COUNTER1_PIN, INPUT_PULLUP);
   pinMode(COUNTER2_PIN, INPUT_PULLUP);
   pinMode(COUNTER3_PIN, INPUT_PULLUP);
+  pinMode(RESET1_PIN, INPUT_PULLUP);
+  pinMode(RESET2_PIN, INPUT_PULLUP);
+  pinMode(RESET3_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
@@ -218,12 +227,13 @@ void setup() {
   config.database_url = DATABASE_URL;
   config.token_status_callback = tokenStatusCallback;
   config.max_token_generation_retry = 5;
+  config.timeout.serverResponse = 10000;
 
   auth.user.email = USER_EMAIL;
   auth.user.password = USER_PASSWORD;
 
   Firebase.reconnectWiFi(true);
-  fbdo.setResponseSize(4096);
+  fbdo.setResponseSize(8192);
 
   DEBUG_PRINT("Initializing Firebase...");
   Firebase.begin(&config, &auth);
@@ -246,31 +256,22 @@ void setup() {
   if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
     const int maxAttempts = 5;
     int attempt = 0;
-    bool countersLoaded = false;
 
-    while (attempt < maxAttempts && !countersLoaded) {
+    while (attempt < maxAttempts) {
       attempt++;
-      DEBUG_PRINT("Attempt ");
-      DEBUG_PRINT(attempt);
-      DEBUG_PRINT(" to load counters from Firebase...");
+      DEBUG_PRINT("Attempt " + String(attempt) + " to load counters from Firebase...");
 
-      // Пути к веткам count-1, count-2, count-3
-      String paths[3];
-      for (int i = 0; i < 3; i++) {
-          paths[i] = "/UsersData/";
-          paths[i].concat(uid);
-          paths[i].concat("/count-");
-          paths[i].concat(i + 1);
-      }
-      int values[3] = {0, 0, 0}; // Временные значения
-      bool success = true;
+      String paths[3] = {
+        "/UsersData/" + uid + "/count-1",
+        "/UsersData/" + uid + "/count-2",
+        "/UsersData/" + uid + "/count-3"
+      };
+      int values[3] = {0, 0, 0};
+      bool allFailed = true;
 
       for (int i = 0; i < 3; i++) {
-        if (Firebase.RTDB.getJSON(&fbdo, paths[i])) {
+        if (Firebase.RTDB.getJSON(&fbdo, paths[i].c_str())) {
           FirebaseJson* json = fbdo.jsonObjectPtr();
-          FirebaseJsonData result;
-          
-          // Получаем последний ключ (timestamp) и его значение
           size_t count = json->iteratorBegin();
           if (count > 0) {
             String lastKey;
@@ -279,53 +280,42 @@ void setup() {
               String key, value;
               int type;
               json->iteratorGet(j, type, key, value);
-              lastKey = key; // Последний ключ в итерации
-              MB_String path = lastKey;
-              path += "/counterValue";
-              json->get(result, path);
+              lastKey = key;
+              FirebaseJsonData result;
+              json->get(result, lastKey + "/counterValue");
               if (result.success) {
                 lastValue = result.to<int>();
               }
             }
             values[i] = lastValue;
-            String msg = String("Loaded counter");
-            msg.concat(i + 1);
-            msg.concat(": ");
-            msg.concat(lastValue);
-            DEBUG_PRINT(msg);
+            DEBUG_PRINT("Loaded counter" + String(i + 1) + ": " + String(lastValue));
+            allFailed = false;
           } else {
-            String msg = "No data for counter";
-            msg.concat(i + 1);
-            DEBUG_PRINT(msg);
-            success = false; // Нет данных, продолжаем пытаться
+            DEBUG_PRINT("No data for counter" + String(i + 1) + ", using 0");
           }
           json->iteratorEnd();
         } else {
-          String msg = "Failed to load ";
-          msg.concat(paths[i]);
-          msg.concat(": ");
-          msg.concat(fbdo.errorReason());
-          DEBUG_PRINT(msg);
-          success = false;
+          String errorReason = fbdo.errorReason();
+          if (errorReason == "") errorReason = "Unknown error";
+          DEBUG_PRINT("Failed to load " + paths[i] + ": " + errorReason + ", using 0");
         }
       }
 
-      if (success) {
+      if (!allFailed) {
         counter1Value = values[0];
         counter2Value = values[1];
         counter3Value = values[2];
-        countersLoaded = true;
-        DEBUG_PRINT("Counters loaded successfully");
+        DEBUG_PRINT("Counters set to: c1=" + String(counter1Value) + ", c2=" + String(counter2Value) + ", c3=" + String(counter3Value));
+        break;
       } else {
-        delay(2000); // Ждем 2 секунды перед следующей попыткой
+        DEBUG_PRINT("All counters failed, retrying...");
+        delay(2000);
+        Firebase.reconnectWiFi(true);
       }
     }
 
-    if (!countersLoaded) {
-      String msg = "Failed to load counters after ";
-      msg.concat(String(maxAttempts));
-      msg.concat(" attempts, resetting to 0");
-      DEBUG_PRINT(msg);
+    if (attempt >= maxAttempts) {
+      DEBUG_PRINT("Max attempts reached, setting counters to 0");
       counter1Value = 0;
       counter2Value = 0;
       counter3Value = 0;
@@ -367,6 +357,48 @@ void loop() {
     initWiFi();
   }
 
+  // Обработка пинов сброса
+  int resetPins[3] = {RESET1_PIN, RESET2_PIN, RESET3_PIN};
+  volatile int* counters[3] = {&counter1Value, &counter2Value, &counter3Value};
+  unsigned long lastResetTimes[3] = {lastResetTime1, lastResetTime2, lastResetTime3};
+
+  for (int i = 0; i < 3; i++) {
+    if (digitalRead(resetPins[i]) == LOW && millis() - lastResetTimes[i] > debounceDelay) {
+      if (*counters[i] > 0) {
+        String storyPath = "/UsersData/" + uid + "/count_story/count-" + String(i + 1) + "/" + String(currentTimestamp);
+        FirebaseJson json;
+        json.set("counterValue", *counters[i]);
+
+        if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
+          Serial.println("Writing to count_story: " + storyPath);
+          if (Firebase.RTDB.setJSON(&fbdo, storyPath.c_str(), &json)) {
+            Serial.println("Count story updated successfully for counter" + String(i + 1));
+            *counters[i] = 0;
+            Serial.println("Counter" + String(i + 1) + " reset to 0");
+
+            // Записываем событие с нулевым значением в count-X
+            String eventPath = "/UsersData/" + uid + "/count-" + String(i + 1) + "/" + String(currentTimestamp);
+            FirebaseJson resetJson;
+            resetJson.set("counterValue", 0);
+            if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &resetJson)) {
+              Serial.println("Reset event written to: " + eventPath);
+            } else {
+              Serial.println("Failed to write reset event: " + fbdo.errorReason());
+            }
+          } else {
+            Serial.println("Failed to update count_story: " + fbdo.errorReason());
+          }
+        } else {
+          Serial.println("WiFi or Firebase not ready, skipping count_story write");
+        }
+      }
+      lastResetTimes[i] = millis();
+    }
+  }
+  lastResetTime1 = lastResetTimes[0];
+  lastResetTime2 = lastResetTimes[1];
+  lastResetTime3 = lastResetTimes[2];
+
   if (millis() - lastSyncMillis >= 3600000) {
     unsigned long ntpTime = getTime();
     if (ntpTime != 0) {
@@ -389,55 +421,53 @@ void loop() {
   if (Firebase.ready() && (millis() - sendDataPrevMillis > timerDelay || sendDataPrevMillis == 0)) {
     sendDataPrevMillis = millis();
 
-    // Выводим состояние очереди только один раз, если она пуста
     static bool queueEmptyLogged = false;
     if (queueHead == queueTail && !queueEmptyLogged) {
-        String queueStatus = "Queue head: ";
-        queueStatus.concat(String(queueHead));
-        queueStatus.concat(", tail: ");
-        queueStatus.concat(String(queueTail));
-        Serial.println(queueStatus); // Упрощенный вывод
-        queueEmptyLogged = true;
+      String queueStatus = "Queue head: ";
+      queueStatus.concat(String(queueHead));
+      queueStatus.concat(", tail: ");
+      queueStatus.concat(String(queueTail));
+      Serial.println(queueStatus);
+      queueEmptyLogged = true;
     }
 
-    // Обрабатываем события, если очередь не пуста
     while (queueHead != queueTail) {
-        queueEmptyLogged = false;
-        String queueStatus = "Queue head: ";
-        queueStatus.concat(String(queueHead));
-        queueStatus.concat(", tail: ");
-        queueStatus.concat(String(queueTail));
-        Serial.println(queueStatus); // Упрощенный вывод
+      queueEmptyLogged = false;
+      String queueStatus = "Queue head: ";
+      queueStatus.concat(String(queueHead));
+      queueStatus.concat(", tail: ");
+      queueStatus.concat(String(queueTail));
+      Serial.println(queueStatus);
 
-        CounterEvent event;
-        noInterrupts();
-        event = eventQueue[queueHead];
-        queueHead = (queueHead + 1) % QUEUE_SIZE;
-        interrupts();
+      CounterEvent event;
+      noInterrupts();
+      event = eventQueue[queueHead];
+      queueHead = (queueHead + 1) % QUEUE_SIZE;
+      interrupts();
 
-        String eventPath = "/UsersData/";
-        eventPath.concat(uid);
-        eventPath.concat("/count-");
-        eventPath.concat(String(event.counterId));
-        eventPath.concat("/");
-        eventPath.concat(String(event.timestamp));
+      String eventPath = "/UsersData/";
+      eventPath.concat(uid);
+      eventPath.concat("/count-");
+      eventPath.concat(String(event.counterId));
+      eventPath.concat("/");
+      eventPath.concat(String(event.timestamp));
 
-        FirebaseJson json;
-        json.set("counterValue", (event.counterId == 1) ? counter1Value : 
-                                (event.counterId == 2) ? counter2Value : counter3Value);
+      FirebaseJson json;
+      json.set("counterValue", (event.counterId == 1) ? counter1Value : 
+                              (event.counterId == 2) ? counter2Value : counter3Value);
 
-        Serial.println("Processing event..."); // Диагностика: дошли ли сюда
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.println(String("Attempting to write to: ").concat(eventPath));
-            if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json)) {
-              Serial.println(String("Set event ok: ").concat(eventPath));
-            } else {
-                Serial.println(String("Set event failed: ").concat(fbdo.errorReason()));
-                Firebase.reconnectWiFi(true);
-            }
+      Serial.println("Processing event...");
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println(String("Attempting to write to: ") + eventPath);
+        if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json)) {
+          Serial.println(String("Set event ok: ") + eventPath);
         } else {
-            Serial.println("WiFi not connected, skipping Firebase write");
+          Serial.println(String("Set event failed: ") + fbdo.errorReason());
+          Firebase.reconnectWiFi(true);
         }
+      } else {
+        Serial.println("WiFi not connected, skipping Firebase write");
+      }
     }
-}
+  }
 }
