@@ -10,7 +10,7 @@
 
 #define DEBUG
 #ifdef DEBUG
-  #define DEBUG_PRINT(x) Serial.println(x)
+  #define DEBUG_PRINT(x) if (Serial) Serial.println(x)
 #else
   #define DEBUG_PRINT(x)
 #endif
@@ -123,7 +123,7 @@ void initWiFi() {
   IPAddress secondaryDNS(8, 8, 4, 4); // Google DNS 2
   WiFi.config(local_ip, gateway, subnet, primaryDNS, secondaryDNS);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connecting to WiFi ..");
+  DEBUG_PRINT("Connecting to WiFi ..");
   
   unsigned long startAttemptTime = millis();
   const unsigned long wifiTimeout = 30000;
@@ -138,15 +138,13 @@ void initWiFi() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println();
-    Serial.println(WiFi.localIP());
-    Serial.println("WiFi connected");
+    DEBUG_PRINT("");
+    DEBUG_PRINT(WiFi.localIP().toString());
+    DEBUG_PRINT("WiFi connected");
     digitalWrite(LED_PIN, HIGH);
-    DEBUG_PRINT("DNS 1: " + WiFi.dnsIP(0).toString());
-    DEBUG_PRINT("DNS 2: " + WiFi.dnsIP(1).toString());
   } else {
-    Serial.println();
-    Serial.println("Failed to connect to WiFi, restarting...");
+    DEBUG_PRINT("");
+    DEBUG_PRINT("Failed to connect to WiFi, restarting...");
     digitalWrite(LED_PIN, LOW);
     delay(1000);
     ESP.restart();
@@ -168,7 +166,7 @@ unsigned long getTime() {
   time_t now;
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    Serial.println("Failed to obtain time");
+    DEBUG_PRINT("Failed to obtain time");
     return 0;
   }
   time(&now);
@@ -176,7 +174,7 @@ unsigned long getTime() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // Инициализация Serial, но без ожидания
 
   pinMode(COUNTER1_PIN, INPUT_PULLUP);
   pinMode(COUNTER2_PIN, INPUT_PULLUP);
@@ -231,18 +229,22 @@ void setup() {
   Firebase.begin(&config, &auth);
 
   DEBUG_PRINT("Getting User UID...");
-  while (auth.token.uid == "") {
-    Serial.print('.');
-    delay(1000);
+  unsigned long uidTimeout = millis();
+  while (auth.token.uid == "" && millis() - uidTimeout < 30000) {
+    delay(100); // Уменьшена задержка, без точек
   }
-  uid = auth.token.uid.c_str();
-  String uidMessage = "User UID: ";
-  uidMessage.concat(uid);
-  DEBUG_PRINT(uidMessage);
+  if (auth.token.uid == "") {
+    DEBUG_PRINT("Failed to get UID, proceeding with empty UID");
+  } else {
+    uid = auth.token.uid.c_str();
+    String uidMessage = "User UID: ";
+    uidMessage.concat(uid);
+    DEBUG_PRINT(uidMessage);
+  }
 
   http.begin();
   ftpSrv.begin("relay", "relay");
-  DEBUG_PRINT("FTP server started @ " + WiFi.localIP().toString());
+  DEBUG_PRINT("FTP server started @ ");
   DEBUG_PRINT("Server listening");
 
   setupRoutes();
@@ -290,41 +292,55 @@ void loop() {
   if (Firebase.ready() && (millis() - sendDataPrevMillis > timerDelay || sendDataPrevMillis == 0)) {
     sendDataPrevMillis = millis();
 
-    String queueStatus = "Queue head: ";
-    queueStatus.concat(String(queueHead));
-    queueStatus.concat(", tail: ");
-    queueStatus.concat(String(queueTail));
-    DEBUG_PRINT(queueStatus);
-
-    while (queueHead != queueTail) {
-      CounterEvent event;
-      noInterrupts();
-      event = eventQueue[queueHead];
-      queueHead = (queueHead + 1) % QUEUE_SIZE;
-      interrupts();
-
-      String eventPath = "/UsersData/";
-      eventPath.concat(uid);
-      eventPath.concat("/count-");
-      eventPath.concat(String(event.counterId));
-      eventPath.concat("/");
-      eventPath.concat(String(event.timestamp));
-
-      FirebaseJson json;
-      json.set("counterValue", (event.counterId == 1) ? counter1Value : 
-                              (event.counterId == 2) ? counter2Value : counter3Value);
-
-      if (WiFi.status() == WL_CONNECTED) {
-        DEBUG_PRINT("Attempting to write to: " + eventPath);
-        if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json)) {
-          DEBUG_PRINT("Set event ok: " + eventPath);
-        } else {
-          DEBUG_PRINT("Set event failed: " + String(fbdo.errorReason()));
-          Firebase.reconnectWiFi(true);
-        }
-      } else {
-        DEBUG_PRINT("WiFi not connected, skipping Firebase write");
-      }
+    // Выводим состояние очереди только один раз, если она пуста
+    static bool queueEmptyLogged = false;
+    if (queueHead == queueTail && !queueEmptyLogged) {
+        String queueStatus = "Queue head: ";
+        queueStatus.concat(String(queueHead));
+        queueStatus.concat(", tail: ");
+        queueStatus.concat(String(queueTail));
+        Serial.println(queueStatus); // Упрощенный вывод
+        queueEmptyLogged = true;
     }
-  }
+
+    // Обрабатываем события, если очередь не пуста
+    while (queueHead != queueTail) {
+        queueEmptyLogged = false;
+        String queueStatus = "Queue head: ";
+        queueStatus.concat(String(queueHead));
+        queueStatus.concat(", tail: ");
+        queueStatus.concat(String(queueTail));
+        Serial.println(queueStatus); // Упрощенный вывод
+
+        CounterEvent event;
+        noInterrupts();
+        event = eventQueue[queueHead];
+        queueHead = (queueHead + 1) % QUEUE_SIZE;
+        interrupts();
+
+        String eventPath = "/UsersData/";
+        eventPath.concat(uid);
+        eventPath.concat("/count-");
+        eventPath.concat(String(event.counterId));
+        eventPath.concat("/");
+        eventPath.concat(String(event.timestamp));
+
+        FirebaseJson json;
+        json.set("counterValue", (event.counterId == 1) ? counter1Value : 
+                                (event.counterId == 2) ? counter2Value : counter3Value);
+
+        Serial.println("Processing event..."); // Диагностика: дошли ли сюда
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println(String("Attempting to write to: ").concat(eventPath));
+            if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json)) {
+              Serial.println(String("Set event ok: ").concat(eventPath));
+            } else {
+                Serial.println(String("Set event failed: ").concat(fbdo.errorReason()));
+                Firebase.reconnectWiFi(true);
+            }
+        } else {
+            Serial.println("WiFi not connected, skipping Firebase write");
+        }
+    }
+}
 }
