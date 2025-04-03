@@ -6,17 +6,29 @@
 
 // Змінні середовища
 // Insert your network credentials
-#define WIFI_SSID "xxxxxx"
-#define WIFI_PASSWORD "xxxxxx"
+#define WIFI_SSID "WIFI_SSID"
+#define WIFI_PASSWORD "WIFI_PASSWORD"
+#define SERIAL_BAUD 115200
+
+// Настройки IP адреса
+const uint8_t local_ip[] = {your_ip};
+const uint8_t gateway[] = {gateway};
+const uint8_t subnet[] = {255, 255, 255, 0};
+const uint8_t dns[] = {8, 8, 8, 8};
+
+extern IPAddress localIPAddress;
+extern IPAddress gatewayIPAddress;
+extern IPAddress subnetIPAddress;
+extern IPAddress dnsIPAddress;
 
 // Insert Firebase project API Key
-#define API_KEY "xxxxxx"
+#define API_KEY "API_KEY"
 
 // Insert Authorized Email and Corresponding Password
-#define USER_EMAIL "xxxxxx"
-#define USER_PASSWORD "xxxxxx"
+#define USER_EMAIL "USER_EMAIL"
+#define USER_PASSWORD "USER_PASSWORD"
 
 // Insert RTDB URLefine the RTDB URL
-#define DATABASE_URL "https://xxxxxx-default-rtdb.europe-west1.firebasedatabase.app"
+#define DATABASE_URL "DATABASE_URL"
 
 #endif // CONFIG_H
