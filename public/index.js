@@ -26,7 +26,7 @@ function plotValues(chart, timestamp, value) {
   var x = epochToJsDate(timestamp).getTime();
   var y = Number(value);
   if (chart && chart.series && chart.series[0]) {
-    if (chart.series[0].data.length > 40) {
+    if (chart.series[0].data.length >= chartRange) {
       chart.series[0].addPoint([x, y], true, true, true);
     } else {
       chart.series[0].addPoint([x, y], true, false, true);
@@ -61,10 +61,13 @@ const chartsCheckboxElement = document.querySelector(
 const cardsReadingsElement = document.querySelector("#cards-div");
 const gaugesReadingsElement = document.querySelector("#gauges-div");
 const chartsDivElement = document.querySelector("#charts-div");
-const counter1Element = document.getElementById("temp");
-const counter2Element = document.getElementById("hum");
-const counter3Element = document.getElementById("pres");
+const counter1Element = document.getElementById("counter1");
+const counter2Element = document.getElementById("counter2");
+const counter3Element = document.getElementById("counter3");
 const updateElement = document.getElementById("lastUpdate");
+
+// Global chart range
+let chartRange = 10;
 
 // Manage UI based on login state
 function setupUI(user) {
@@ -80,15 +83,19 @@ function setupUI(user) {
     console.log("User UID:", uid);
 
     const dbRef = firebase.database().ref(`UsersData/${uid}`);
-    const chartRef = firebase.database().ref(`UsersData/${uid}/charts/range`);
 
     // Initialize gauges
-    var gaugeT = createTemperatureGauge();
-    var gaugeH = createHumidityGauge();
-    var gaugeP = createPressureGauge();
-    gaugeT.draw();
-    gaugeH.draw();
-    gaugeP.draw();
+    var gaugeA = createTemperatureGauge();
+    var gaugeB = createHumidityGauge();
+    var gaugeC = createPressureGauge();
+    gaugeA.draw();
+    gaugeB.draw();
+    gaugeC.draw();
+
+    // Initialize charts
+    var chartA = createCounter1Chart();
+    var chartB = createCounter2Chart();
+    var chartC = createCounter3Chart();
 
     // Set initial state of charts-div
     chartsDivElement.style.display = chartsCheckboxElement.checked
@@ -98,61 +105,71 @@ function setupUI(user) {
     // Update counter values for cards and gauges
     dbRef.on("value", (snapshot) => {
       const data = snapshot.val() || {};
-      const count1 = Object.keys(data["count-1"] || {}).length;
-      const count2 = Object.keys(data["count-2"] || {}).length;
-      const count3 = Object.keys(data["count-3"] || {}).length;
-
-      counter1Element.innerHTML = count1;
-      counter2Element.innerHTML = count2;
-      counter3Element.innerHTML = count3;
-      gaugeT.value = count1;
-      gaugeH.value = count2;
-      gaugeP.value = count3;
-
-      // Find the latest timestamp across all counters
       let latestTimestamp = 0;
+      let latestValues = { "count-1": 0, "count-2": 0, "count-3": 0 };
+
       ["count-1", "count-2", "count-3"].forEach((counter) => {
         const events = data[counter] || {};
-        Object.keys(events).forEach((key) => {
-          const epochTime = Number(key.split("_")[0]);
+        const timestamps = Object.keys(events).sort(
+          (a, b) => Number(b) - Number(a)
+        );
+        if (timestamps.length > 0) {
+          const latestKey = timestamps[0];
+          const value = events[latestKey].counterValue || 0;
+          latestValues[counter] = value;
+          const epochTime = Number(latestKey);
           if (epochTime > latestTimestamp) latestTimestamp = epochTime;
-        });
+        }
       });
+
+      counter1Element.innerHTML = latestValues["count-1"];
+      counter2Element.innerHTML = latestValues["count-2"];
+      counter3Element.innerHTML = latestValues["count-3"];
+      gaugeA.value = latestValues["count-1"];
+      gaugeB.value = latestValues["count-2"];
+      gaugeC.value = latestValues["count-3"];
       updateElement.innerHTML = latestTimestamp
         ? epochToDateTime(latestTimestamp)
         : "N/A";
     });
 
-    // Handle chart range and plot events
-    let chartRange = 10;
-    chartRef.on("value", (snapshot) => {
-      chartRange = Number(snapshot.val()) || 10;
-      console.log("Chart range:", chartRange);
-
+    // Load and update chart data
+    function updateCharts() {
+      chartRange = Number(chartsRangeInputElement.value) || 10;
       ["count-1", "count-2", "count-3"].forEach((counter, index) => {
         const counterRef = firebase
           .database()
           .ref(`UsersData/${uid}/${counter}`);
+        counterRef.off("child_added"); // Отключаем предыдущие слушатели
         counterRef
           .orderByKey()
           .limitToLast(chartRange)
-          .on("child_added", (snapshot) => {
-            const key = snapshot.key;
-            const epochTime = Number(key.split("_")[0]);
-            if (index === 0) plotValues(chartT, epochTime, 1);
-            else if (index === 1) plotValues(chartH, epochTime, 1);
-            else if (index === 2) plotValues(chartP, epochTime, 1);
+          .once("value", (snapshot) => {
+            const events = snapshot.val() || {};
+            const timestamps = Object.keys(events).sort(
+              (a, b) => Number(a) - Number(b)
+            );
+            const chart = index === 0 ? chartA : index === 1 ? chartB : chartC;
+            chart.series[0].setData([]); // Очищаем график
+            timestamps.forEach((key) => {
+              const value = events[key].counterValue || 0;
+              plotValues(chart, Number(key), value);
+            });
           });
+        // Реальное время для всех новых событий
+        counterRef.on("child_added", (snapshot) => {
+          const key = snapshot.key;
+          const value = snapshot.val().counterValue || 0;
+          plotValues(
+            index === 0 ? chartA : index === 1 ? chartB : chartC,
+            Number(key),
+            value
+          );
+        });
       });
-    });
-
-    if (chartsRangeInputElement) {
-      chartsRangeInputElement.onchange = () => {
-        chartRef.set(Number(chartsRangeInputElement.value));
-      };
-    } else {
-      console.error("charts-range input not found in DOM");
     }
+    chartsRangeInputElement.onchange = updateCharts;
+    updateCharts(); // Инициализируем графики при загрузке
 
     // Checkbox event listeners
     cardsCheckboxElement.addEventListener("change", (e) => {
@@ -184,35 +201,68 @@ function setupUI(user) {
       "count-3": null,
     };
     function createTable() {
-      ["count-1", "count-2", "count-3"].forEach((counter, index) => {
+      $("#tbody").empty(); // Очищаем таблицу
+      ["count-1", "count-2", "count-3"].forEach((counter) => {
         const counterRef = firebase
           .database()
           .ref(`UsersData/${uid}/${counter}`);
+        // Начальная загрузка последних 100 записей
         counterRef
           .orderByKey()
           .limitToLast(100)
-          .on("child_added", (snapshot) => {
-            const key = snapshot.key;
-            const epochTime = Number(key.split("_")[0]);
-            const timestamp = epochToDateTime(epochTime);
-            var content = "<tr>";
-            content += "<td>" + timestamp + "</td>";
-            content += "<td>" + (index === 0 ? "1" : "-") + "</td>";
-            content += "<td>" + (index === 1 ? "1" : "-") + "</td>";
-            content += "<td>" + (index === 2 ? "1" : "-") + "</td>";
-            content += "</tr>";
-            $("#tbody").prepend(content);
-            if (!lastReadingTimestamps[counter])
-              lastReadingTimestamps[counter] = epochTime;
+          .once("value", (snapshot) => {
+            const events = snapshot.val() || {};
+            const timestamps = Object.keys(events).sort(
+              (a, b) => Number(b) - Number(a)
+            );
+            timestamps.forEach((key) => {
+              const epochTime = Number(key);
+              const timestamp = epochToDateTime(epochTime);
+              const value = events[key].counterValue || 0;
+              var content = "<tr>";
+              content += "<td>" + timestamp + "</td>";
+              content +=
+                "<td>" + (counter === "count-1" ? value : "-") + "</td>";
+              content +=
+                "<td>" + (counter === "count-2" ? value : "-") + "</td>";
+              content +=
+                "<td>" + (counter === "count-3" ? value : "-") + "</td>";
+              content += "</tr>";
+              $("#tbody").prepend(content);
+              if (!lastReadingTimestamps[counter])
+                lastReadingTimestamps[counter] = epochTime;
+            });
           });
+        // Обновление таблицы в реальном времени
+        counterRef.on("child_added", (snapshot) => {
+          const key = snapshot.key;
+          const epochTime = Number(key);
+          const timestamp = epochToDateTime(epochTime);
+          const value = snapshot.val().counterValue || 0;
+          var content = "<tr>";
+          content += "<td>" + timestamp + "</td>";
+          content += "<td>" + (counter === "count-1" ? value : "-") + "</td>";
+          content += "<td>" + (counter === "count-2" ? value : "-") + "</td>";
+          content += "<td>" + (counter === "count-3" ? value : "-") + "</td>";
+          content += "</tr>";
+          $("#tbody").prepend(content);
+          lastReadingTimestamps[counter] = epochTime;
+        });
       });
     }
 
     function appendToTable() {
-      ["count-1", "count-2", "count-3"].forEach((counter, index) => {
+      ["count-1", "count-2", "count-3"].forEach((counter) => {
         const counterRef = firebase
           .database()
           .ref(`UsersData/${uid}/${counter}`);
+        // Проверяем, что lastReadingTimestamps инициализирован
+        if (!lastReadingTimestamps[counter]) {
+          console.warn(
+            `lastReadingTimestamps[${counter}] is null, skipping append for this counter`
+          );
+          return;
+        }
         counterRef
           .orderByKey()
           .endAt(lastReadingTimestamps[counter].toString())
@@ -220,20 +270,26 @@ function setupUI(user) {
           .once("value", (snapshot) => {
             if (snapshot.exists()) {
               const events = snapshot.val();
-              const keys = Object.keys(events).sort().reverse();
+              const keys = Object.keys(events).sort(
+                (a, b) => Number(b) - Number(a)
+              );
               keys.forEach((key, i) => {
                 if (
                   i === 0 &&
                   key === lastReadingTimestamps[counter].toString()
                 )
-                  return; // Skip the last known timestamp
-                const epochTime = Number(key.split("_")[0]);
+                  return;
+                const epochTime = Number(key);
                 const timestamp = epochToDateTime(epochTime);
+                const value = events[key].counterValue || 0;
                 var content = "<tr>";
                 content += "<td>" + timestamp + "</td>";
-                content += "<td>" + (index === 0 ? "1" : "-") + "</td>";
-                content += "<td>" + (index === 1 ? "1" : "-") + "</td>";
-                content += "<td>" + (index === 2 ? "1" : "-") + "</td>";
+                content +=
+                  "<td>" + (counter === "count-1" ? value : "-") + "</td>";
+                content +=
+                  "<td>" + (counter === "count-2" ? value : "-") + "</td>";
+                content +=
+                  "<td>" + (counter === "count-3" ? value : "-") + "</td>";
                 content += "</tr>";
                 $("#tbody").append(content);
                 if (i === keys.length - 1)

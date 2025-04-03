@@ -31,16 +31,16 @@
     <!-- TOP BAR -->
     <div class="topnav">
       <h1>
-        Лічильники зібраних акамуляторів <i class="fas fa-clipboard-list"></i>
+        Лічильники зібраних акумуляторів <i class="fas fa-clipboard-list"></i>
       </h1>
     </div>
 
     <!-- AUTHENTICATION BAR -->
     <div id="authentication-bar" style="display: none">
       <p>
-        <span id="authentication-status">Корисутвувач авторизований</span>
+        <span id="authentication-status">Користувач авторизований</span>
         <span id="user-details">USEREMAIL</span>
-        <a href="/" id="logout-link">Вийти</a>
+        <a href="/" id="logout-link">Вийти</a>
       </p>
     </div>
 
@@ -101,13 +101,13 @@
               Лінія "А"
             </p>
             <p>
-              <span class="reading"><span id="temp"></span> шт.</span>
+              <span class="reading"><span id="counter1"></span> шт.</span>
             </p>
           </div>
           <div class="card">
             <p><i class="fas fa-tint" style="color: #00add6"></i> Лінія "Б"</p>
             <p>
-              <span class="reading"><span id="hum"></span> шт.</span>
+              <span class="reading"><span id="counter2"></span> шт.</span>
             </p>
           </div>
           <div class="card">
@@ -116,7 +116,7 @@
               Лінія "В"
             </p>
             <p>
-              <span class="reading"><span id="pres"></span> шт.</span>
+              <span class="reading"><span id="counter3"></span> шт.</span>
             </p>
           </div>
         </div>
@@ -129,13 +129,16 @@
         </div>
       </div>
       <div id="charts-div" style="display: none">
-        <p>Кількість записів: <input type="number" id="charts-range" /></p>
-        <div id="chart-temperature" class="chart-container"></div>
-        <div id="chart-humidity" class="chart-container"></div>
-        <div id="chart-pressure" class="chart-container"></div>
+        <p>
+          Кількість записів:
+          <input type="number" id="charts-range" value="10" />
+        </p>
+        <div id="chart-counter1" class="chart-container"></div>
+        <div id="chart-counter2" class="chart-container"></div>
+        <div id="chart-counter3" class="chart-container"></div>
       </div>
       <p>
-        <button id="view-data-button">Дивиться всі дані</button>
+        <button id="view-data-button">Переглянути всі дані</button>
         <button id="hide-data-button" style="display: none">
           Сховати дані
         </button>

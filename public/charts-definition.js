@@ -7,12 +7,12 @@ function createCounter1Chart() {
   }
   console.log("Creating new chartT");
   var chart = new Highcharts.Chart({
-    chart: { renderTo: "chart-temperature", type: "spline" },
-    series: [{ name: "Counter 1" }],
-    title: { text: undefined },
+    chart: { renderTo: "chart-counter1", type: "spline" },
+    series: [{ name: 'Лінія "А"' }],
+    title: { text: 'Лінія "А"' },
     plotOptions: { line: { animation: false, dataLabels: { enabled: true } } },
     xAxis: { type: "datetime", dateTimeLabelFormats: { second: "%H:%M:%S" } },
-    yAxis: { title: { text: "Counter 1 Value" } },
+    yAxis: { title: { text: "Кількість (шт)" } },
     credits: { enabled: false },
   });
   chartT = chart;
@@ -26,15 +26,12 @@ function createCounter2Chart() {
   }
   console.log("Creating new chartH");
   var chart = new Highcharts.Chart({
-    chart: { renderTo: "chart-humidity", type: "spline" },
-    series: [{ name: "Counter 2" }],
-    title: { text: undefined },
-    plotOptions: {
-      line: { animation: false, dataLabels: { enabled: true } },
-      series: { color: "#50b8b4" },
-    },
+    chart: { renderTo: "chart-counter2", type: "spline" },
+    series: [{ name: 'Лінія "Б"', color: "#50b8b4" }],
+    title: { text: 'Лінія "Б"' },
+    plotOptions: { line: { animation: false, dataLabels: { enabled: true } } },
     xAxis: { type: "datetime", dateTimeLabelFormats: { second: "%H:%M:%S" } },
-    yAxis: { title: { text: "Counter 2 Value" } },
+    yAxis: { title: { text: "Кількість (шт)" } },
     credits: { enabled: false },
   });
   chartH = chart;
@@ -48,24 +45,14 @@ function createCounter3Chart() {
   }
   console.log("Creating new chartP");
   var chart = new Highcharts.Chart({
-    chart: { renderTo: "chart-pressure", type: "spline" },
-    series: [{ name: "Counter 3" }],
-    title: { text: undefined },
-    plotOptions: {
-      line: { animation: false, dataLabels: { enabled: true } },
-      series: { color: "#A62639" },
-    },
+    chart: { renderTo: "chart-counter3", type: "spline" },
+    series: [{ name: 'Лінія "В"', color: "#A62639" }],
+    title: { text: 'Лінія "В"' },
+    plotOptions: { line: { animation: false, dataLabels: { enabled: true } } },
     xAxis: { type: "datetime", dateTimeLabelFormats: { second: "%H:%M:%S" } },
-    yAxis: { title: { text: "Counter 3 Value" } },
+    yAxis: { title: { text: "Кількість (шт)" } },
     credits: { enabled: false },
   });
   chartP = chart;
   return chart;
 }
-
-// Инициализируем графики один раз при загрузке
-document.addEventListener("DOMContentLoaded", () => {
-  chartT = createCounter1Chart();
-  chartH = createCounter2Chart();
-  chartP = createCounter3Chart();
-});

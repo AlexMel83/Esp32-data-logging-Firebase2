@@ -1,8 +1,9 @@
-// Create Counter 1 Gauge (was Temperature)
+// Create Counter 1 Gauge (Лінія "А")
 function createTemperatureGauge() {
   var gauge = new RadialGauge({
     renderTo: "gauge-line-a",
-    units: 'Лінія "А"',
+    units: "шт",
+    title: 'Лінія "А"',
     minValue: 0,
     maxValue: 100,
     colorValueBoxRect: "#049faa",
@@ -12,13 +13,7 @@ function createTemperatureGauge() {
     majorTicks: ["0", "20", "40", "60", "80", "100"],
     minorTicks: 4,
     strokeTicks: true,
-    highlights: [
-      {
-        from: 80,
-        to: 100,
-        color: "#03C0C1",
-      },
-    ],
+    highlights: [{ from: 80, to: 100, color: "#03C0C1" }],
     colorPlate: "#fff",
     borderShadowWidth: 0,
     borders: false,
@@ -36,11 +31,12 @@ function createTemperatureGauge() {
   return gauge;
 }
 
-// Create Counter 2 Gauge (was Humidity)
+// Create Counter 2 Gauge (Лінія "Б")
 function createHumidityGauge() {
   var gauge = new RadialGauge({
     renderTo: "gauge-line-b",
-    units: 'Лінія "Б"',
+    units: "шт",
+    title: 'Лінія "Б"',
     minValue: 0,
     maxValue: 100,
     colorValueBoxRect: "#049faa",
@@ -50,13 +46,7 @@ function createHumidityGauge() {
     majorTicks: ["0", "20", "40", "60", "80", "100"],
     minorTicks: 4,
     strokeTicks: true,
-    highlights: [
-      {
-        from: 80,
-        to: 100,
-        color: "#03C0C1",
-      },
-    ],
+    highlights: [{ from: 80, to: 100, color: "#03C0C1" }],
     colorPlate: "#fff",
     borderShadowWidth: 0,
     borders: false,
@@ -74,12 +64,12 @@ function createHumidityGauge() {
   return gauge;
 }
 
-// Create Counter 3 Gauge (new)
+// Create Counter 3 Gauge (Лінія "В")
 function createPressureGauge() {
   var gauge = new RadialGauge({
     renderTo: "gauge-line-c",
-    // Убираем width и height, чтобы они определялись контейнером
-    units: 'Лінія "В"',
+    units: "шт",
+    title: 'Лінія "В"',
     minValue: 0,
     maxValue: 100,
     colorValueBoxRect: "#049faa",
@@ -89,13 +79,7 @@ function createPressureGauge() {
     majorTicks: ["0", "20", "40", "60", "80", "100"],
     minorTicks: 4,
     strokeTicks: true,
-    highlights: [
-      {
-        from: 80,
-        to: 100,
-        color: "#03C0C1",
-      },
-    ],
+    highlights: [{ from: 80, to: 100, color: "#03C0C1" }],
     colorPlate: "#fff",
     borderShadowWidth: 0,
     borders: false,
