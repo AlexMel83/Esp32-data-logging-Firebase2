@@ -43,9 +43,9 @@ volatile int queueHead = 0;
 volatile int queueTail = 0;
 
 // Counter values
-volatile int counter1Value = 0;
-volatile int counter2Value = 0;
-volatile int counter3Value = 0;
+volatile int counter1Value;
+volatile int counter2Value;
+volatile int counter3Value;
 
 // Pin definitions
 const int COUNTER1_PIN = 14;
@@ -231,7 +231,7 @@ void setup() {
   DEBUG_PRINT("Getting User UID...");
   unsigned long uidTimeout = millis();
   while (auth.token.uid == "" && millis() - uidTimeout < 30000) {
-    delay(100); // Уменьшена задержка, без точек
+    delay(100);
   }
   if (auth.token.uid == "") {
     DEBUG_PRINT("Failed to get UID, proceeding with empty UID");
@@ -242,9 +242,106 @@ void setup() {
     DEBUG_PRINT(uidMessage);
   }
 
+  // Загрузка последних значений счетчиков из Firebase
+  if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
+    const int maxAttempts = 5;
+    int attempt = 0;
+    bool countersLoaded = false;
+
+    while (attempt < maxAttempts && !countersLoaded) {
+      attempt++;
+      DEBUG_PRINT("Attempt ");
+      DEBUG_PRINT(attempt);
+      DEBUG_PRINT(" to load counters from Firebase...");
+
+      // Пути к веткам count-1, count-2, count-3
+      String paths[3];
+      for (int i = 0; i < 3; i++) {
+          paths[i] = "/UsersData/";
+          paths[i].concat(uid);
+          paths[i].concat("/count-");
+          paths[i].concat(i + 1);
+      }
+      int values[3] = {0, 0, 0}; // Временные значения
+      bool success = true;
+
+      for (int i = 0; i < 3; i++) {
+        if (Firebase.RTDB.getJSON(&fbdo, paths[i])) {
+          FirebaseJson* json = fbdo.jsonObjectPtr();
+          FirebaseJsonData result;
+          
+          // Получаем последний ключ (timestamp) и его значение
+          size_t count = json->iteratorBegin();
+          if (count > 0) {
+            String lastKey;
+            int lastValue = 0;
+            for (size_t j = 0; j < count; j++) {
+              String key, value;
+              int type;
+              json->iteratorGet(j, type, key, value);
+              lastKey = key; // Последний ключ в итерации
+              MB_String path = lastKey;
+              path += "/counterValue";
+              json->get(result, path);
+              if (result.success) {
+                lastValue = result.to<int>();
+              }
+            }
+            values[i] = lastValue;
+            String msg = String("Loaded counter");
+            msg.concat(i + 1);
+            msg.concat(": ");
+            msg.concat(lastValue);
+            DEBUG_PRINT(msg);
+          } else {
+            String msg = "No data for counter";
+            msg.concat(i + 1);
+            DEBUG_PRINT(msg);
+            success = false; // Нет данных, продолжаем пытаться
+          }
+          json->iteratorEnd();
+        } else {
+          String msg = "Failed to load ";
+          msg.concat(paths[i]);
+          msg.concat(": ");
+          msg.concat(fbdo.errorReason());
+          DEBUG_PRINT(msg);
+          success = false;
+        }
+      }
+
+      if (success) {
+        counter1Value = values[0];
+        counter2Value = values[1];
+        counter3Value = values[2];
+        countersLoaded = true;
+        DEBUG_PRINT("Counters loaded successfully");
+      } else {
+        delay(2000); // Ждем 2 секунды перед следующей попыткой
+      }
+    }
+
+    if (!countersLoaded) {
+      String msg = "Failed to load counters after ";
+      msg.concat(String(maxAttempts));
+      msg.concat(" attempts, resetting to 0");
+      DEBUG_PRINT(msg);
+      counter1Value = 0;
+      counter2Value = 0;
+      counter3Value = 0;
+    }
+  } else {
+    DEBUG_PRINT("No WiFi or Firebase not ready, counters set to 0");
+    counter1Value = 0;
+    counter2Value = 0;
+    counter3Value = 0;
+  }
+
   http.begin();
   ftpSrv.begin("relay", "relay");
-  DEBUG_PRINT("FTP server started @ ");
+  String msg = "FTP server started @ ";
+  msg.concat(WiFi.localIP().toString());
+  DEBUG_PRINT(msg);
   DEBUG_PRINT("Server listening");
 
   setupRoutes();
