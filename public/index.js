@@ -109,16 +109,30 @@ function setupUI(user) {
       let latestValues = { "count-1": 0, "count-2": 0, "count-3": 0 };
 
       ["count-1", "count-2", "count-3"].forEach((counter) => {
-        const events = data[counter] || {};
-        const timestamps = Object.keys(events).sort(
-          (a, b) => Number(b) - Number(a)
-        );
-        if (timestamps.length > 0) {
-          const latestKey = timestamps[0];
-          const value = events[latestKey].counterValue || 0;
-          latestValues[counter] = value;
-          const epochTime = Number(latestKey);
-          if (epochTime > latestTimestamp) latestTimestamp = epochTime;
+        const batches = data[counter] || {};
+        let latestCounterTimestamp = 0;
+        let latestCounterValue = 0;
+
+        // Проходим по всем порциям (batches)
+        Object.keys(batches).forEach((batchKey) => {
+          const events = batches[batchKey] || {};
+          // Получаем все временные метки событий в этой порции
+          const eventTimestamps = Object.keys(events)
+            .map(Number)
+            .sort((a, b) => b - a);
+          if (eventTimestamps.length > 0) {
+            const latestEventTimestamp = eventTimestamps[0]; // Самое последнее событие в порции
+            const value = events[latestEventTimestamp].counterValue || 0;
+            if (latestEventTimestamp > latestCounterTimestamp) {
+              latestCounterTimestamp = latestEventTimestamp;
+              latestCounterValue = value;
+            }
+          }
+        });
+
+        latestValues[counter] = latestCounterValue;
+        if (latestCounterTimestamp > latestTimestamp) {
+          latestTimestamp = latestCounterTimestamp;
         }
       });
 
@@ -141,30 +155,49 @@ function setupUI(user) {
           .database()
           .ref(`UsersData/${uid}/${counter}`);
         counterRef.off("child_added"); // Отключаем предыдущие слушатели
-        counterRef
-          .orderByKey()
-          .limitToLast(chartRange)
-          .once("value", (snapshot) => {
-            const events = snapshot.val() || {};
-            const timestamps = Object.keys(events).sort(
-              (a, b) => Number(a) - Number(b)
-            );
-            const chart = index === 0 ? chartA : index === 1 ? chartB : chartC;
-            chart.series[0].setData([]); // Очищаем график
-            timestamps.forEach((key) => {
-              const value = events[key].counterValue || 0;
-              plotValues(chart, Number(key), value);
+
+        // Получаем все порции и собираем события
+        counterRef.once("value", (snapshot) => {
+          const batches = snapshot.val() || {};
+          let allEvents = [];
+
+          // Проходим по всем порциям
+          Object.keys(batches).forEach((batchKey) => {
+            const events = batches[batchKey] || {};
+            // Добавляем все события из порции в общий список
+            Object.keys(events).forEach((eventKey) => {
+              allEvents.push({
+                timestamp: Number(eventKey),
+                value: events[eventKey].counterValue || 0,
+              });
             });
           });
-        // Реальное время для всех новых событий
+
+          // Сортируем события по временной метке и берем последние chartRange
+          allEvents.sort((a, b) => a.timestamp - b.timestamp);
+          const eventsToPlot = allEvents.slice(-chartRange);
+
+          // Очищаем график и добавляем точки
+          const chart = index === 0 ? chartA : index === 1 ? chartB : chartC;
+          chart.series[0].setData([]); // Очищаем график
+          eventsToPlot.forEach((event) => {
+            plotValues(chart, event.timestamp, event.value);
+          });
+        });
+
+        // Реальное время для всех новых порций
         counterRef.on("child_added", (snapshot) => {
-          const key = snapshot.key;
-          const value = snapshot.val().counterValue || 0;
-          plotValues(
-            index === 0 ? chartA : index === 1 ? chartB : chartC,
-            Number(key),
-            value
-          );
+          const batchKey = snapshot.key;
+          const events = snapshot.val() || {};
+          // Проходим по всем событиям в новой порции
+          Object.keys(events).forEach((eventKey) => {
+            const value = events[eventKey].counterValue || 0;
+            plotValues(
+              index === 0 ? chartA : index === 1 ? chartB : chartC,
+              Number(eventKey),
+              value
+            );
+          });
         });
       });
     }
@@ -200,6 +233,7 @@ function setupUI(user) {
       "count-2": null,
       "count-3": null,
     };
+
     function createTable() {
       $("#tbody").empty(); // Очищаем таблицу
       ["count-1", "count-2", "count-3"].forEach((counter) => {
@@ -207,46 +241,74 @@ function setupUI(user) {
           .database()
           .ref(`UsersData/${uid}/${counter}`);
         // Начальная загрузка последних 100 записей
-        counterRef
-          .orderByKey()
-          .limitToLast(100)
-          .once("value", (snapshot) => {
-            const events = snapshot.val() || {};
-            const timestamps = Object.keys(events).sort(
-              (a, b) => Number(b) - Number(a)
-            );
-            timestamps.forEach((key) => {
-              const epochTime = Number(key);
-              const timestamp = epochToDateTime(epochTime);
-              const value = events[key].counterValue || 0;
-              var content = "<tr>";
-              content += "<td>" + timestamp + "</td>";
-              content +=
-                "<td>" + (counter === "count-1" ? value : "-") + "</td>";
-              content +=
-                "<td>" + (counter === "count-2" ? value : "-") + "</td>";
-              content +=
-                "<td>" + (counter === "count-3" ? value : "-") + "</td>";
-              content += "</tr>";
-              $("#tbody").prepend(content);
-              if (!lastReadingTimestamps[counter])
-                lastReadingTimestamps[counter] = epochTime;
+        counterRef.once("value", (snapshot) => {
+          const batches = snapshot.val() || {};
+          let allEvents = [];
+
+          // Проходим по всем порциям
+          Object.keys(batches).forEach((batchKey) => {
+            const events = batches[batchKey] || {};
+            Object.keys(events).forEach((eventKey) => {
+              allEvents.push({
+                timestamp: Number(eventKey),
+                value: events[eventKey].counterValue || 0,
+              });
             });
           });
+
+          // Сортируем события по убыванию времени и берем последние 100
+          allEvents.sort((a, b) => b.timestamp - a.timestamp);
+          const eventsToDisplay = allEvents.slice(0, 100);
+
+          eventsToDisplay.forEach((event) => {
+            const epochTime = event.timestamp;
+            const timestamp = epochToDateTime(epochTime);
+            const value = event.value;
+            var content = "<tr>";
+            content += "<td>" + timestamp + "</td>";
+            content += "<td>" + (counter === "count-1" ? value : "-") + "</td>";
+            content += "<td>" + (counter === "count-2" ? value : "-") + "</td>";
+            content += "<td>" + (counter === "count-3" ? value : "-") + "</td>";
+            content += "</tr>";
+            $("#tbody").prepend(content);
+          });
+
+          // Устанавливаем lastReadingTimestamps
+          if (allEvents.length > 0) {
+            lastReadingTimestamps[counter] = allEvents[0].timestamp;
+          }
+        });
+
         // Обновление таблицы в реальном времени
         counterRef.on("child_added", (snapshot) => {
-          const key = snapshot.key;
-          const epochTime = Number(key);
-          const timestamp = epochToDateTime(epochTime);
-          const value = snapshot.val().counterValue || 0;
-          var content = "<tr>";
-          content += "<td>" + timestamp + "</td>";
-          content += "<td>" + (counter === "count-1" ? value : "-") + "</td>";
-          content += "<td>" + (counter === "count-2" ? value : "-") + "</td>";
-          content += "<td>" + (counter === "count-3" ? value : "-") + "</td>";
-          content += "</tr>";
-          $("#tbody").prepend(content);
-          lastReadingTimestamps[counter] = epochTime;
+          const batchKey = snapshot.key;
+          const events = snapshot.val() || {};
+          let newEvents = [];
+
+          // Собираем новые события
+          Object.keys(events).forEach((eventKey) => {
+            newEvents.push({
+              timestamp: Number(eventKey),
+              value: events[eventKey].counterValue || 0,
+            });
+          });
+
+          // Сортируем новые события по убыванию времени
+          newEvents.sort((a, b) => b.timestamp - a.timestamp);
+
+          newEvents.forEach((event) => {
+            const epochTime = event.timestamp;
+            const timestamp = epochToDateTime(epochTime);
+            const value = event.value;
+            var content = "<tr>";
+            content += "<td>" + timestamp + "</td>";
+            content += "<td>" + (counter === "count-1" ? value : "-") + "</td>";
+            content += "<td>" + (counter === "count-2" ? value : "-") + "</td>";
+            content += "<td>" + (counter === "count-3" ? value : "-") + "</td>";
+            content += "</tr>";
+            $("#tbody").prepend(content);
+            lastReadingTimestamps[counter] = epochTime;
+          });
         });
       });
     }
@@ -262,40 +324,49 @@ function setupUI(user) {
           );
           return;
         }
-        counterRef
-          .orderByKey()
-          .endAt(lastReadingTimestamps[counter].toString())
-          .limitToLast(100)
-          .once("value", (snapshot) => {
-            if (snapshot.exists()) {
-              const events = snapshot.val();
-              const keys = Object.keys(events).sort(
-                (a, b) => Number(b) - Number(a)
-              );
-              keys.forEach((key, i) => {
-                if (
-                  i === 0 &&
-                  key === lastReadingTimestamps[counter].toString()
-                )
-                  return;
-                const epochTime = Number(key);
-                const timestamp = epochToDateTime(epochTime);
-                const value = events[key].counterValue || 0;
-                var content = "<tr>";
-                content += "<td>" + timestamp + "</td>";
-                content +=
-                  "<td>" + (counter === "count-1" ? value : "-") + "</td>";
-                content +=
-                  "<td>" + (counter === "count-2" ? value : "-") + "</td>";
-                content +=
-                  "<td>" + (counter === "count-3" ? value : "-") + "</td>";
-                content += "</tr>";
-                $("#tbody").append(content);
-                if (i === keys.length - 1)
-                  lastReadingTimestamps[counter] = epochTime;
-              });
-            }
+
+        counterRef.once("value", (snapshot) => {
+          const batches = snapshot.val() || {};
+          let allEvents = [];
+
+          // Проходим по всем порциям
+          Object.keys(batches).forEach((batchKey) => {
+            const events = batches[batchKey] || {};
+            Object.keys(events).forEach((eventKey) => {
+              const timestamp = Number(eventKey);
+              // Добавляем только события, которые старше lastReadingTimestamps
+              if (timestamp < lastReadingTimestamps[counter]) {
+                allEvents.push({
+                  timestamp: timestamp,
+                  value: events[eventKey].counterValue || 0,
+                });
+              }
+            });
           });
+
+          // Сортируем события по убыванию времени и берем последние 100
+          allEvents.sort((a, b) => b.timestamp - a.timestamp);
+          const eventsToAppend = allEvents.slice(0, 100);
+
+          eventsToAppend.forEach((event) => {
+            const epochTime = event.timestamp;
+            const timestamp = epochToDateTime(epochTime);
+            const value = event.value;
+            var content = "<tr>";
+            content += "<td>" + timestamp + "</td>";
+            content += "<td>" + (counter === "count-1" ? value : "-") + "</td>";
+            content += "<td>" + (counter === "count-2" ? value : "-") + "</td>";
+            content += "<td>" + (counter === "count-3" ? value : "-") + "</td>";
+            content += "</tr>";
+            $("#tbody").append(content);
+          });
+
+          // Обновляем lastReadingTimestamps, если есть более старые события
+          if (allEvents.length > 0) {
+            lastReadingTimestamps[counter] =
+              allEvents[allEvents.length - 1].timestamp;
+          }
+        });
       });
     }
 
