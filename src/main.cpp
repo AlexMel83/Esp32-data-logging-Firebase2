@@ -191,6 +191,30 @@ unsigned long getTime() {
   return now;
 }
 
+void cleanupOldEvents(String path, int maxEvents) {
+  if (Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
+    FirebaseJson* json = fbdo.jsonObjectPtr();
+    size_t count = json->iteratorBegin();
+    if (count > maxEvents) {
+      std::vector<String> keys;
+      for (size_t i = 0; i < count; i++) {
+        String key, value;
+        int type;
+        json->iteratorGet(i, type, key, value);
+        keys.push_back(key);
+      }
+      std::sort(keys.begin(), keys.end());
+      for (size_t i = 0; i < count - maxEvents; i++) {
+        String eventPath = path + "/" + keys[i];
+        Firebase.RTDB.deleteNode(&fbdo, eventPath.c_str());
+        DEBUG_PRINT("Deleted old event: " + eventPath);
+      }
+    }
+    json->iteratorEnd();
+    json->clear();
+  }
+}
+
 void setup() {
   #ifdef DEBUG
     Serial.begin(115200);
@@ -211,6 +235,15 @@ void setup() {
     delay(200);
     digitalWrite(LED_PIN, LOW);
     delay(200);
+    DEBUG_PRINT("Blink " + String(i + 1) + " completed");
+  }
+
+  // Проверяем, запустилась ли плата корректно
+  unsigned long startTime = millis();
+  delay(100);
+  if (millis() - startTime < 50) { // Если время не прошло, значит плата зависла
+    DEBUG_PRINT("Setup failed to progress, restarting...");
+    ESP.restart();
   }
 
   DEBUG_PRINT("Setting up interrupts...");
@@ -223,13 +256,14 @@ void setup() {
   delay(500);
   digitalWrite(LED_PIN, LOW);
   delay(500);
+  DEBUG_PRINT("Interrupts set up");
 
   DEBUG_PRINT("Initializing WiFi...");
   initWiFi();
 
   if (WiFi.status() != WL_CONNECTED) {
     DEBUG_PRINT("WiFi failed to initialize, restarting...");
-    ESP.restart(); // Программный WIFI сброс
+    ESP.restart(); // Программный сброс
   }
 
   // Мигаем LED 2 раза, чтобы показать, что WiFi инициализирован
@@ -315,26 +349,32 @@ void setup() {
     }
   }
 
-  // Загрузка последних значений счетчиков из Firebase
-  if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
-    const int maxAttempts = 5;
-    int attempt = 0;
+  // Загрузка последних значений счетчиков из Firebase с использованием QueryFilter
+if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
+  const int maxAttempts = 5;
+  int attempt = 0;
 
-    while (attempt < maxAttempts) {
-      attempt++;
-      DEBUG_PRINT("Attempt " + String(attempt) + " to load counters from Firebase...");
+  while (attempt < maxAttempts) {
+    attempt++;
+    DEBUG_PRINT("Attempt " + String(attempt) + " to load counters from Firebase...");
 
-      String paths[3] = {
-        "/UsersData/" + uid + "/count-1",
-        "/UsersData/" + uid + "/count-2",
-        "/UsersData/" + uid + "/count-3"
-      };
-      int values[3] = {0, 0, 0};
-      bool allFailed = true;
+    int values[3] = {0, 0, 0}; // Для хранения значений счетчиков
+    bool allFailed = true;
 
-      for (int i = 0; i < 3; i++) {
-        if (Firebase.RTDB.getJSON(&fbdo, paths[i].c_str())) {
-          FirebaseJson* json = fbdo.jsonObjectPtr();
+    // Загружаем данные для каждого счетчика
+    for (int i = 0; i < 3; i++) {
+      String path = "/UsersData/" + uid + "/count-" + String(i + 1);
+      FirebaseData queryFbdo; // Отдельный объект FirebaseData для запроса
+
+      // Настраиваем QueryFilter для orderByKey и limitToLast
+      QueryFilter query;
+      query.orderBy("$key"); // "$key" означает сортировку по ключам (аналог orderByKey)
+      query.limitToLast(1);  // Ограничиваем результат последним элементом
+
+      // Выполняем запрос с фильтром
+      if (Firebase.RTDB.getJSON(&queryFbdo, path.c_str(), &query)) {
+        if (queryFbdo.dataType() == "json") {
+          FirebaseJson* json = queryFbdo.jsonObjectPtr();
           size_t count = json->iteratorBegin();
           if (count > 0) {
             String lastKey;
@@ -351,7 +391,7 @@ void setup() {
               }
             }
             values[i] = lastValue;
-            DEBUG_PRINT("Loaded counter" + String(i + 1) + ": " + String(lastValue));
+            DEBUG_PRINT("Loaded last value for counter" + String(i + 1) + ": " + String(lastValue));
             allFailed = false;
           } else {
             DEBUG_PRINT("No data for counter" + String(i + 1) + ", using 0");
@@ -359,37 +399,43 @@ void setup() {
           json->iteratorEnd();
           json->clear();
         } else {
-          String errorReason = fbdo.errorReason();
-          if (errorReason == "") errorReason = "Unknown error";
-          DEBUG_PRINT("Failed to load " + paths[i] + ": " + errorReason + ", using 0");
+          DEBUG_PRINT("Unexpected data type for counter" + String(i + 1) + ": " + queryFbdo.dataType());
         }
-      }
-
-      if (!allFailed) {
-        counter1Value = values[0];
-        counter2Value = values[1];
-        counter3Value = values[2];
-        DEBUG_PRINT("Counters set to: c1=" + String(counter1Value) + ", c2=" + String(counter2Value) + ", c3=" + String(counter3Value));
-        break;
       } else {
-        DEBUG_PRINT("All counters failed, retrying...");
-        delay(2000);
-        Firebase.reconnectWiFi(true);
+        String errorReason = queryFbdo.errorReason();
+        if (errorReason == "") errorReason = "Unknown error";
+        DEBUG_PRINT("Failed to load " + path + ": " + errorReason + ", using 0");
       }
+
+      // Очищаем QueryFilter после использования
+      query.clear();
     }
 
-    if (attempt >= maxAttempts) {
-      DEBUG_PRINT("Max attempts reached, setting counters to 0");
-      counter1Value = 0;
-      counter2Value = 0;
-      counter3Value = 0;
+    if (!allFailed) {
+      counter1Value = values[0];
+      counter2Value = values[1];
+      counter3Value = values[2];
+      DEBUG_PRINT("Counters set to: c1=" + String(counter1Value) + ", c2=" + String(counter2Value) + ", c3=" + String(counter3Value));
+      break;
+    } else {
+      DEBUG_PRINT("All counters failed, retrying...");
+      delay(2000);
+      Firebase.reconnectWiFi(true);
     }
-  } else {
-    DEBUG_PRINT("No WiFi or Firebase not ready, counters set to 0");
+  }
+
+  if (attempt >= maxAttempts) {
+    DEBUG_PRINT("Max attempts reached, setting counters to 0");
     counter1Value = 0;
     counter2Value = 0;
     counter3Value = 0;
   }
+} else {
+  DEBUG_PRINT("No WiFi or Firebase not ready, counters set to 0");
+  counter1Value = 0;
+  counter2Value = 0;
+  counter3Value = 0;
+}
 
   http.begin();
   ftpSrv.begin("relay", "relay");
@@ -405,11 +451,13 @@ void loop() {
   http.handleClient();
   ftpSrv.handleFTP();
 
-  // Отладка состояния пинов
-  static unsigned long lastPinDebug = 0;
-  if (millis() - lastPinDebug >= 1000) {
-    DEBUG_PRINT("Pin states: COUNTER3=" + String(digitalRead(COUNTER3_PIN)) + ", RESET3=" + String(digitalRead(RESET3_PIN)));
-    lastPinDebug = millis();
+  static unsigned long lastCleanup = 0;
+  if (millis() - lastCleanup >= 3600000) { // Раз в час
+    for (int i = 1; i <= 3; i++) {
+      String path = "/UsersData/" + uid + "/count-" + String(i);
+      cleanupOldEvents(path, 2000); // Храним только последние 2000 событий
+    }
+    lastCleanup = millis();
   }
 
   if (WiFi.status() == WL_CONNECTED) {
