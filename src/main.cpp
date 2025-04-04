@@ -7,6 +7,8 @@
 #include <Firebase_ESP_Client.h>
 #include "routes.h"
 #include "time.h"
+#include <vector>
+#include <algorithm>
 
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
@@ -48,6 +50,11 @@ volatile int counter1Value;
 volatile int counter2Value;
 volatile int counter3Value;
 
+// Флаги для обработки событий в loop()
+volatile bool counter1Triggered = false;
+volatile bool counter2Triggered = false;
+volatile bool counter3Triggered = false;
+
 // Pin definitions
 const int COUNTER1_PIN = 14; // Увеличивает counter1
 const int COUNTER2_PIN = 26; // Увеличивает counter2
@@ -63,17 +70,16 @@ const unsigned long blinkInterval = 1000;
 bool ledState = false;
 
 // Debounce variables
-unsigned long lastDebounceTime1 = 0;
-unsigned long lastDebounceTime2 = 0;
-unsigned long lastDebounceTime3 = 0;
 unsigned long lastResetTime1 = 0; // Для сброса
 unsigned long lastResetTime2 = 0;
 unsigned long lastResetTime3 = 0;
-const unsigned long debounceDelay = 200; // Уменьшено до 200 мс
+const unsigned long debounceDelay = 500; // Увеличено до 500 мс
 
 // Timer variables
 unsigned long sendDataPrevMillis = 0;
 unsigned long timerDelay = 15000; // Увеличено до 15 секунд
+const unsigned long firebaseWriteInterval = 1000; // Минимальный интервал между запросами (1 секунда)
+unsigned long lastFirebaseWrite = 0;
 
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 7200;  // UTC+2 для Украины
@@ -86,53 +92,49 @@ unsigned long lastSyncMillis = 0;
 
 // Interrupt Service Routines with debounce
 void IRAM_ATTR counter1ISR() {
+  static unsigned long lastTrigger = 0;
   unsigned long currentMillis = millis();
-  if (currentMillis - lastDebounceTime1 > debounceDelay) {
-    counter1Value++;
-    DEBUG_PRINT("Counter1 incremented: " + String(counter1Value));
-    if ((queueTail + 1) % QUEUE_SIZE != queueHead) {
-      eventQueue[queueTail].counterId = 1;
-      eventQueue[queueTail].timestamp = currentTimestamp;
-      queueTail = (queueTail + 1) % QUEUE_SIZE;
-      DEBUG_PRINT("Event added to queue for counter 1");
-    } else {
-      DEBUG_PRINT("Queue full, event for counter 1 dropped");
-    }
-    lastDebounceTime1 = currentMillis;
+  if (currentMillis - lastTrigger > debounceDelay) {
+    counter1Triggered = true;
+    lastTrigger = currentMillis;
   }
 }
 
 void IRAM_ATTR counter2ISR() {
+  static unsigned long lastTrigger = 0;
   unsigned long currentMillis = millis();
-  if (currentMillis - lastDebounceTime2 > debounceDelay) {
-    counter2Value++;
-    DEBUG_PRINT("Counter2 incremented: " + String(counter2Value));
-    if ((queueTail + 1) % QUEUE_SIZE != queueHead) {
-      eventQueue[queueTail].counterId = 2;
-      eventQueue[queueTail].timestamp = currentTimestamp;
-      queueTail = (queueTail + 1) % QUEUE_SIZE;
-      DEBUG_PRINT("Event added to queue for counter 2");
-    } else {
-      DEBUG_PRINT("Queue full, event for counter 2 dropped");
-    }
-    lastDebounceTime2 = currentMillis;
+  if (currentMillis - lastTrigger > debounceDelay) {
+    counter2Triggered = true;
+    lastTrigger = currentMillis;
   }
 }
 
 void IRAM_ATTR counter3ISR() {
+  static unsigned long lastTrigger = 0;
   unsigned long currentMillis = millis();
-  if (currentMillis - lastDebounceTime3 > debounceDelay) {
-    counter3Value++;
-    DEBUG_PRINT("Counter3 incremented: " + String(counter3Value));
-    if ((queueTail + 1) % QUEUE_SIZE != queueHead) {
-      eventQueue[queueTail].counterId = 3;
-      eventQueue[queueTail].timestamp = currentTimestamp;
-      queueTail = (queueTail + 1) % QUEUE_SIZE;
-      DEBUG_PRINT("Event added to queue for counter 3");
-    } else {
-      DEBUG_PRINT("Queue full, event for counter 3 dropped");
-    }
-    lastDebounceTime3 = currentMillis;
+  if (currentMillis - lastTrigger > debounceDelay) {
+    counter3Triggered = true;
+    lastTrigger = currentMillis;
+  }
+}
+
+// Функция для обработки событий счетчиков
+void processCounterEvent(int counterId, volatile int& counterValue) {
+  counterValue++;
+  DEBUG_PRINT("Counter" + String(counterId) + " incremented: " + String(counterValue));
+  int queueSize = (queueTail >= queueHead) ? (queueTail - queueHead) : (queueTail + QUEUE_SIZE - queueHead);
+  if (queueSize >= QUEUE_SIZE * 0.9) { // Если очередь заполнена на 90%
+    DEBUG_PRINT("Queue almost full (" + String(queueSize) + "/" + String(QUEUE_SIZE) + "), event for counter " + String(counterId) + " dropped");
+    return;
+  }
+  int nextTail = (queueTail + 1) % QUEUE_SIZE;
+  if (nextTail != queueHead) {
+    eventQueue[queueTail].counterId = counterId;
+    eventQueue[queueTail].timestamp = currentTimestamp;
+    queueTail = nextTail;
+    DEBUG_PRINT("Event added to queue for counter " + String(counterId));
+  } else {
+    DEBUG_PRINT("Queue full, event for counter " + String(counterId) + " dropped");
   }
 }
 
@@ -191,11 +193,12 @@ unsigned long getTime() {
   return now;
 }
 
-void cleanupOldEvents(String path, int maxEvents) {
+// Функция для очистки старых пачек событий
+void cleanupOldEvents(String path, int maxBatches) {
   if (Firebase.RTDB.getJSON(&fbdo, path.c_str())) {
     FirebaseJson* json = fbdo.jsonObjectPtr();
     size_t count = json->iteratorBegin();
-    if (count > maxEvents) {
+    if (count > maxBatches) {
       std::vector<String> keys;
       for (size_t i = 0; i < count; i++) {
         String key, value;
@@ -204,10 +207,10 @@ void cleanupOldEvents(String path, int maxEvents) {
         keys.push_back(key);
       }
       std::sort(keys.begin(), keys.end());
-      for (size_t i = 0; i < count - maxEvents; i++) {
-        String eventPath = path + "/" + keys[i];
-        Firebase.RTDB.deleteNode(&fbdo, eventPath.c_str());
-        DEBUG_PRINT("Deleted old event: " + eventPath);
+      for (size_t i = 0; i < count - maxBatches; i++) {
+        String batchPath = path + "/" + keys[i];
+        Firebase.RTDB.deleteNode(&fbdo, batchPath.c_str());
+        DEBUG_PRINT("Deleted old batch: " + batchPath);
       }
     }
     json->iteratorEnd();
@@ -229,15 +232,6 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  // Мигаем LED 3 раза, чтобы показать начало setup()
-  for (int i = 0; i < 3; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(200);
-    digitalWrite(LED_PIN, LOW);
-    delay(200);
-    DEBUG_PRINT("Blink " + String(i + 1) + " completed");
-  }
-
   // Проверяем, запустилась ли плата корректно
   unsigned long startTime = millis();
   delay(100);
@@ -250,12 +244,6 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(COUNTER1_PIN), counter1ISR, FALLING);
   attachInterrupt(digitalPinToInterrupt(COUNTER2_PIN), counter2ISR, FALLING);
   attachInterrupt(digitalPinToInterrupt(COUNTER3_PIN), counter3ISR, FALLING);
-
-  // Мигаем LED 1 раз, чтобы показать, что прерывания настроены
-  digitalWrite(LED_PIN, HIGH);
-  delay(500);
-  digitalWrite(LED_PIN, LOW);
-  delay(500);
   DEBUG_PRINT("Interrupts set up");
 
   DEBUG_PRINT("Initializing WiFi...");
@@ -264,14 +252,6 @@ void setup() {
   if (WiFi.status() != WL_CONNECTED) {
     DEBUG_PRINT("WiFi failed to initialize, restarting...");
     ESP.restart(); // Программный сброс
-  }
-
-  // Мигаем LED 2 раза, чтобы показать, что WiFi инициализирован
-  for (int i = 0; i < 2; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(200);
-    digitalWrite(LED_PIN, LOW);
-    delay(200);
   }
 
   DEBUG_PRINT("Configuring time...");
@@ -312,8 +292,8 @@ void setup() {
   config.database_url = DATABASE_URL;
   config.token_status_callback = tokenStatusCallback;
   config.max_token_generation_retry = 5;
-  config.timeout.serverResponse = 20000; // Увеличено до 20 секунд
-  config.timeout.wifiReconnect = 10000;
+  config.timeout.serverResponse = 30000; // Увеличено до 30 секунд
+  config.timeout.wifiReconnect = 15000;  // Увеличено до 15 секунд
 
   auth.user.email = USER_EMAIL;
   auth.user.password = USER_PASSWORD;
@@ -338,7 +318,7 @@ void setup() {
     DEBUG_PRINT(uidMessage);
   }
 
-  // Тестовая запись в Firebase
+  // Тестовая запись в Firebase и инициализация счетчиков
   if (Firebase.ready()) {
     FirebaseJson testJson;
     testJson.set("counterValue", 42);
@@ -347,95 +327,131 @@ void setup() {
     } else {
       DEBUG_PRINT("Failed to write test data: " + fbdo.errorReason());
     }
+
+    // Инициализация счетчиков, если данных нет
+    for (int i = 1; i <= 3; i++) {
+      String path = "/UsersData/" + uid + "/count-" + String(i);
+      if (!Firebase.RTDB.pathExisted(&fbdo, path.c_str())) {
+        FirebaseJson initJson;
+        FirebaseJson eventData;
+        eventData.set("counterValue", 0);
+        initJson.set(String(currentTimestamp), eventData);
+        String initPath = path + "/" + String(currentTimestamp);
+        if (Firebase.RTDB.setJSON(&fbdo, initPath.c_str(), &initJson)) {
+          DEBUG_PRINT("Initialized counter" + String(i) + " with 0");
+        } else {
+          DEBUG_PRINT("Failed to initialize counter" + String(i) + ": " + fbdo.errorReason());
+        }
+      }
+    }
   }
 
-  // Загрузка последних значений счетчиков из Firebase с использованием QueryFilter
-if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
-  const int maxAttempts = 5;
-  int attempt = 0;
+  // Загрузка последних значений счетчиков из Firebase
+  if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
+    const int maxAttempts = 5;
+    int attempt = 0;
 
-  while (attempt < maxAttempts) {
-    attempt++;
-    DEBUG_PRINT("Attempt " + String(attempt) + " to load counters from Firebase...");
+    while (attempt < maxAttempts) {
+      attempt++;
+      DEBUG_PRINT("Attempt " + String(attempt) + " to load counters from Firebase...");
 
-    int values[3] = {0, 0, 0}; // Для хранения значений счетчиков
-    bool allFailed = true;
+      int values[3] = {0, 0, 0}; // Для хранения значений счетчиков
+      bool allFailed = true;
 
-    // Загружаем данные для каждого счетчика
-    for (int i = 0; i < 3; i++) {
-      String path = "/UsersData/" + uid + "/count-" + String(i + 1);
-      FirebaseData queryFbdo; // Отдельный объект FirebaseData для запроса
+      // Загружаем данные для каждого счетчика
+      for (int i = 0; i < 3; i++) {
+        String path = "/UsersData/" + uid + "/count-" + String(i + 1);
+        FirebaseData queryFbdo;
 
-      // Настраиваем QueryFilter для orderByKey и limitToLast
-      QueryFilter query;
-      query.orderBy("$key"); // "$key" означает сортировку по ключам (аналог orderByKey)
-      query.limitToLast(1);  // Ограничиваем результат последним элементом
+        // Настраиваем QueryFilter для получения последней порции
+        QueryFilter query;
+        query.orderBy("$key"); // Сортируем по ключам (временным меткам)
+        query.limitToLast(1);  // Берем только последнюю порцию
 
-      // Выполняем запрос с фильтром
-      if (Firebase.RTDB.getJSON(&queryFbdo, path.c_str(), &query)) {
-        if (queryFbdo.dataType() == "json") {
-          FirebaseJson* json = queryFbdo.jsonObjectPtr();
-          size_t count = json->iteratorBegin();
-          if (count > 0) {
-            String lastKey;
-            int lastValue = 0;
-            for (size_t j = 0; j < count; j++) {
-              String key, value;
+        if (Firebase.RTDB.getJSON(&queryFbdo, path.c_str(), &query)) {
+          if (queryFbdo.dataType() == "json") {
+            FirebaseJson* json = queryFbdo.jsonObjectPtr();
+            size_t batchCount = json->iteratorBegin();
+            if (batchCount > 0) {
+              unsigned long latestTimestamp = 0;
+              int lastValue = 0;
+
+              // Получаем последнюю порцию
+              String batchKey, batchValue;
               int type;
-              json->iteratorGet(j, type, key, value);
-              lastKey = key;
-              FirebaseJsonData result;
-              json->get(result, lastKey + "/counterValue");
-              if (result.success) {
-                lastValue = result.to<int>();
+              json->iteratorGet(0, type, batchKey, batchValue);
+
+              // Получаем содержимое порции
+              FirebaseJson batchJson;
+              batchJson.setJsonData(batchValue);
+              size_t eventCount = batchJson.iteratorBegin();
+
+              // Проходим по всем событиям в порции, чтобы найти последнее
+              for (size_t k = 0; k < eventCount; k++) {
+                String eventKey, eventValue;
+                int eventType;
+                batchJson.iteratorGet(k, eventType, eventKey, eventValue);
+
+                // Преобразуем ключ (временную метку) в число
+                unsigned long eventTimestamp = eventKey.toInt();
+                if (eventTimestamp > latestTimestamp) {
+                  FirebaseJsonData result;
+                  batchJson.get(result, eventKey + "/counterValue");
+                  if (result.success) {
+                    latestTimestamp = eventTimestamp;
+                    lastValue = result.to<int>();
+                  }
+                }
               }
+              batchJson.iteratorEnd();
+              batchJson.clear();
+
+              values[i] = lastValue;
+              DEBUG_PRINT("Loaded last value for counter" + String(i + 1) + ": " + String(lastValue));
+              allFailed = false;
+            } else {
+              DEBUG_PRINT("No data for counter" + String(i + 1) + ", using 0");
             }
-            values[i] = lastValue;
-            DEBUG_PRINT("Loaded last value for counter" + String(i + 1) + ": " + String(lastValue));
-            allFailed = false;
+            json->iteratorEnd();
+            json->clear();
           } else {
-            DEBUG_PRINT("No data for counter" + String(i + 1) + ", using 0");
+            DEBUG_PRINT("Unexpected data type for counter" + String(i + 1) + ": " + queryFbdo.dataType());
           }
-          json->iteratorEnd();
-          json->clear();
         } else {
-          DEBUG_PRINT("Unexpected data type for counter" + String(i + 1) + ": " + queryFbdo.dataType());
+          String errorReason = queryFbdo.errorReason();
+          if (errorReason == "") errorReason = "Unknown error";
+          DEBUG_PRINT("Failed to load " + path + ": " + errorReason + ", using 0");
         }
-      } else {
-        String errorReason = queryFbdo.errorReason();
-        if (errorReason == "") errorReason = "Unknown error";
-        DEBUG_PRINT("Failed to load " + path + ": " + errorReason + ", using 0");
+
+        // Очищаем QueryFilter после использования
+        query.clear();
       }
 
-      // Очищаем QueryFilter после использования
-      query.clear();
+      if (!allFailed) {
+        counter1Value = values[0];
+        counter2Value = values[1];
+        counter3Value = values[2];
+        DEBUG_PRINT("Counters set to: c1=" + String(counter1Value) + ", c2=" + String(counter2Value) + ", c3=" + String(counter3Value));
+        break;
+      } else {
+        DEBUG_PRINT("All counters failed, retrying...");
+        delay(2000);
+        Firebase.reconnectWiFi(true);
+      }
     }
 
-    if (!allFailed) {
-      counter1Value = values[0];
-      counter2Value = values[1];
-      counter3Value = values[2];
-      DEBUG_PRINT("Counters set to: c1=" + String(counter1Value) + ", c2=" + String(counter2Value) + ", c3=" + String(counter3Value));
-      break;
-    } else {
-      DEBUG_PRINT("All counters failed, retrying...");
-      delay(2000);
-      Firebase.reconnectWiFi(true);
+    if (attempt >= maxAttempts) {
+      DEBUG_PRINT("Max attempts reached, setting counters to 0");
+      counter1Value = 0;
+      counter2Value = 0;
+      counter3Value = 0;
     }
-  }
-
-  if (attempt >= maxAttempts) {
-    DEBUG_PRINT("Max attempts reached, setting counters to 0");
+  } else {
+    DEBUG_PRINT("No WiFi or Firebase not ready, counters set to 0");
     counter1Value = 0;
     counter2Value = 0;
     counter3Value = 0;
   }
-} else {
-  DEBUG_PRINT("No WiFi or Firebase not ready, counters set to 0");
-  counter1Value = 0;
-  counter2Value = 0;
-  counter3Value = 0;
-}
 
   http.begin();
   ftpSrv.begin("relay", "relay");
@@ -448,17 +464,28 @@ if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
 }
 
 void loop() {
+  // Обрабатываем события счетчиков
+  if (counter1Triggered) {
+    noInterrupts();
+    counter1Triggered = false;
+    interrupts();
+    processCounterEvent(1, counter1Value);
+  }
+  if (counter2Triggered) {
+    noInterrupts();
+    counter2Triggered = false;
+    interrupts();
+    processCounterEvent(2, counter2Value);
+  }
+  if (counter3Triggered) {
+    noInterrupts();
+    counter3Triggered = false;
+    interrupts();
+    processCounterEvent(3, counter3Value);
+  }
+
   http.handleClient();
   ftpSrv.handleFTP();
-
-  static unsigned long lastCleanup = 0;
-  if (millis() - lastCleanup >= 3600000) { // Раз в час
-    for (int i = 1; i <= 3; i++) {
-      String path = "/UsersData/" + uid + "/count-" + String(i);
-      cleanupOldEvents(path, 2000); // Храним только последние 2000 событий
-    }
-    lastCleanup = millis();
-  }
 
   if (WiFi.status() == WL_CONNECTED) {
     if (millis() - lastBlinkMillis >= blinkInterval) {
@@ -500,7 +527,9 @@ void loop() {
             // Записываем событие с нулевым значением в count-X
             String eventPath = "/UsersData/" + uid + "/count-" + String(i + 1) + "/" + String(currentTimestamp);
             FirebaseJson resetJson;
-            resetJson.set("counterValue", 0);
+            FirebaseJson eventData;
+            eventData.set("counterValue", 0);
+            resetJson.set(String(currentTimestamp), eventData);
             if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &resetJson)) {
               DEBUG_PRINT("Reset event written to: " + eventPath);
             } else {
@@ -540,8 +569,29 @@ void loop() {
     lastSyncMillis = millis();
   }
 
+  // Очистка старых данных раз в час
+  static unsigned long lastCleanup = 0;
+  if (millis() - lastCleanup >= 3600000) { // Раз в час
+    for (int i = 1; i <= 3; i++) {
+      String path = "/UsersData/" + uid + "/count-" + String(i);
+      cleanupOldEvents(path, 10); // Храним только последние 10 пачек (по 10 событий = 100 событий)
+    }
+    lastCleanup = millis();
+  }
+
+  // Обработка очереди событий
   if (Firebase.ready() && (millis() - sendDataPrevMillis > timerDelay || sendDataPrevMillis == 0)) {
+    if (millis() - lastFirebaseWrite < firebaseWriteInterval) {
+      return; // Пропускаем, если прошло меньше 1 секунды с последнего запроса
+    }
     sendDataPrevMillis = millis();
+
+    // Проверяем статус токена
+    if (!Firebase.ready()) {
+      DEBUG_PRINT("Firebase not ready, attempting to re-authenticate...");
+      Firebase.reconnectWiFi(true);
+      Firebase.begin(&config, &auth);
+    }
 
     static bool queueEmptyLogged = false;
     if (queueHead == queueTail && !queueEmptyLogged) {
@@ -553,6 +603,10 @@ void loop() {
       queueEmptyLogged = true;
     }
 
+    static int maxQueueAttempts = 5; // Максимальное количество попыток обработки очереди
+    static int queueAttempts = 0;
+
+    const int batchSize = 10; // Максимальный размер порции (10 событий за раз)
     while (queueHead != queueTail) {
       queueEmptyLogged = false;
       String queueStatus = "Queue head: ";
@@ -561,38 +615,115 @@ void loop() {
       queueStatus.concat(String(queueTail));
       DEBUG_PRINT(queueStatus);
 
-      CounterEvent event;
-      noInterrupts();
-      event = eventQueue[queueHead];
-      queueHead = (queueHead + 1) % QUEUE_SIZE;
-      interrupts();
-
-      DEBUG_PRINT("Processing event for counter " + String(event.counterId) + " at timestamp " + String(event.timestamp));
-
-      String eventPath = "/UsersData/";
-      eventPath.concat(uid);
-      eventPath.concat("/count-");
-      eventPath.concat(String(event.counterId));
-      eventPath.concat("/");
-      eventPath.concat(String(event.timestamp));
-
-      FirebaseJson json;
-      json.set("counterValue", (event.counterId == 1) ? counter1Value : 
-                              (event.counterId == 2) ? counter2Value : counter3Value);
-
-      DEBUG_PRINT("Processing event...");
-      if (WiFi.status() == WL_CONNECTED) {
-        DEBUG_PRINT(String("Attempting to write to: ") + eventPath);
-        if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json)) {
-          DEBUG_PRINT(String("Set event ok: ") + eventPath);
-        } else {
-          DEBUG_PRINT(String("Set event failed: ") + fbdo.errorReason());
-          Firebase.reconnectWiFi(true);
-        }
-      } else {
-        DEBUG_PRINT("WiFi not connected, skipping Firebase write");
+      // Проверяем количество попыток обработки очереди
+      queueAttempts++;
+      if (queueAttempts >= maxQueueAttempts) {
+        DEBUG_PRINT("Max queue attempts reached, clearing queue to prevent infinite loop");
+        noInterrupts();
+        queueHead = queueTail; // Очищаем очередь
+        queueAttempts = 0;
+        interrupts();
+        break;
       }
-      json.clear();
+
+      // Проверяем, что UID не пустой
+      if (uid == "") {
+        DEBUG_PRINT("UID is empty, cannot write to Firebase");
+        break;
+      }
+
+      // Создаем массивы для группировки событий по счетчикам
+      FirebaseJson batchData[3]; // Один JSON для каждого счетчика (count-1, count-2, count-3)
+      unsigned long batchTimestamps[3] = {0, 0, 0}; // Временная метка первой записи в пачке для каждого счетчика
+      int eventsProcessed = 0;
+
+      // Обрабатываем события порцией
+      while (queueHead != queueTail && eventsProcessed < batchSize) {
+        CounterEvent event;
+        noInterrupts();
+        event = eventQueue[queueHead];
+        queueHead = (queueHead + 1) % QUEUE_SIZE;
+        interrupts();
+
+        DEBUG_PRINT("Processing event for counter " + String(event.counterId) + " at timestamp " + String(event.timestamp));
+
+        // Определяем индекс счетчика (0 для count-1, 1 для count-2, 2 для count-3)
+        int counterIndex = event.counterId - 1;
+
+        // Если это первое событие в пачке, сохраняем временную метку
+        if (batchTimestamps[counterIndex] == 0) {
+          batchTimestamps[counterIndex] = event.timestamp;
+        }
+
+        // Создаем JSON-объект для события
+        FirebaseJson eventData;
+        eventData.set("counterValue", (event.counterId == 1) ? counter1Value : 
+                                      (event.counterId == 2) ? counter2Value : counter3Value);
+
+        // Добавляем событие в batchData с временной меткой как ключом
+        String eventKey = String(event.timestamp);
+        batchData[counterIndex].set(eventKey, eventData);
+
+        eventsProcessed++;
+      }
+
+      // Отправляем пачки для каждого счетчика
+      if (WiFi.status() == WL_CONNECTED && WiFi.RSSI() > -80 && eventsProcessed > 0) {
+        bool allSuccess = true;
+        for (int i = 0; i < 3; i++) {
+          if (batchTimestamps[i] == 0) continue; // Пропускаем счетчики без событий
+
+          // Формируем путь для пачки (без префикса batch_)
+          String batchPath = "/UsersData/";
+          batchPath.concat(uid);
+          batchPath.concat("/count-");
+          batchPath.concat(String(i + 1));
+          batchPath.concat("/");
+          batchPath.concat(String(batchTimestamps[i]));
+
+          // Отправляем пачку с повторными попытками
+          const int maxRetryAttempts = 3;
+          int retryAttempt = 0;
+          bool success = false;
+          while (retryAttempt < maxRetryAttempts && !success) {
+            if (Firebase.RTDB.setJSON(&fbdo, batchPath.c_str(), &batchData[i])) {
+              DEBUG_PRINT("Batch written to: " + batchPath);
+              lastFirebaseWrite = millis();
+              success = true;
+            } else {
+              DEBUG_PRINT("Failed to write batch for counter " + String(i + 1) + " (attempt " + String(retryAttempt + 1) + "): " + fbdo.errorReason());
+              if (fbdo.errorReason() == "Permission denied") {
+                DEBUG_PRINT("Permission denied, attempting to re-authenticate...");
+                Firebase.reconnectWiFi(true);
+                Firebase.begin(&config, &auth);
+              }
+              retryAttempt++;
+              delay(2000); // Задержка 2 секунды перед повторной попыткой
+            }
+          }
+          if (!success) {
+            allSuccess = false;
+            break;
+          }
+        }
+
+        if (!allSuccess) {
+          DEBUG_PRINT("Max retry attempts reached, rolling back queue");
+          noInterrupts();
+          queueHead = (queueHead - eventsProcessed + QUEUE_SIZE) % QUEUE_SIZE; // Откатываем queueHead
+          interrupts();
+          break;
+        }
+      } else if (eventsProcessed > 0) {
+        DEBUG_PRINT("WiFi not connected or signal too weak (RSSI: " + String(WiFi.RSSI()) + "), rolling back queue");
+        noInterrupts();
+        queueHead = (queueHead - eventsProcessed + QUEUE_SIZE) % QUEUE_SIZE; // Откатываем queueHead
+        interrupts();
+        break;
+      }
+    }
+    if (queueHead == queueTail) {
+      queueAttempts = 0; // Сбрасываем счетчик, если очередь пуста
     }
   }
 }
