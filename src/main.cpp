@@ -8,15 +8,16 @@
 #include "routes.h"
 #include "time.h"
 
-#define DEBUG
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+
+// Определяем DEBUG_PRINT в самом начале
+#define DEBUG // Можно закомментировать, чтобы отключить отладку
 #ifdef DEBUG
-  #define DEBUG_PRINT(x) if (Serial) Serial.println(x)
+  #define DEBUG_PRINT(x) do { if (Serial) Serial.println(x); } while (0)
 #else
   #define DEBUG_PRINT(x)
 #endif
-
-#include "addons/TokenHelper.h"
-#include "addons/RTDBHelper.h"
 
 // Define servers
 WebServer http(80);
@@ -37,7 +38,7 @@ struct CounterEvent {
 };
 
 // Queue for counter events
-#define QUEUE_SIZE 100
+#define QUEUE_SIZE 50 // Уменьшено для экономии памяти
 CounterEvent eventQueue[QUEUE_SIZE];
 volatile int queueHead = 0;
 volatile int queueTail = 0;
@@ -49,11 +50,11 @@ volatile int counter3Value;
 
 // Pin definitions
 const int COUNTER1_PIN = 14; // Увеличивает counter1
-const int COUNTER2_PIN = 27; // Увеличивает counter2
-const int COUNTER3_PIN = 26; // Увеличивает counter3
+const int COUNTER2_PIN = 26; // Увеличивает counter2
+const int COUNTER3_PIN = 27; // Увеличивает counter3
 const int RESET1_PIN = 32;   // Сбрасывает counter1
 const int RESET2_PIN = 33;   // Сбрасывает counter2
-const int RESET3_PIN = 34;   // Сбрасывает counter3
+const int RESET3_PIN = 25;   // Сбрасывает counter3
 const int LED_PIN = 2;
 
 // Wi-Fi LED blink variables
@@ -68,11 +69,11 @@ unsigned long lastDebounceTime3 = 0;
 unsigned long lastResetTime1 = 0; // Для сброса
 unsigned long lastResetTime2 = 0;
 unsigned long lastResetTime3 = 0;
-const unsigned long debounceDelay = 600;
+const unsigned long debounceDelay = 200; // Уменьшено до 200 мс
 
 // Timer variables
 unsigned long sendDataPrevMillis = 0;
-unsigned long timerDelay = 5000;
+unsigned long timerDelay = 15000; // Увеличено до 15 секунд
 
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 7200;  // UTC+2 для Украины
@@ -88,10 +89,14 @@ void IRAM_ATTR counter1ISR() {
   unsigned long currentMillis = millis();
   if (currentMillis - lastDebounceTime1 > debounceDelay) {
     counter1Value++;
+    DEBUG_PRINT("Counter1 incremented: " + String(counter1Value));
     if ((queueTail + 1) % QUEUE_SIZE != queueHead) {
       eventQueue[queueTail].counterId = 1;
       eventQueue[queueTail].timestamp = currentTimestamp;
       queueTail = (queueTail + 1) % QUEUE_SIZE;
+      DEBUG_PRINT("Event added to queue for counter 1");
+    } else {
+      DEBUG_PRINT("Queue full, event for counter 1 dropped");
     }
     lastDebounceTime1 = currentMillis;
   }
@@ -101,10 +106,14 @@ void IRAM_ATTR counter2ISR() {
   unsigned long currentMillis = millis();
   if (currentMillis - lastDebounceTime2 > debounceDelay) {
     counter2Value++;
+    DEBUG_PRINT("Counter2 incremented: " + String(counter2Value));
     if ((queueTail + 1) % QUEUE_SIZE != queueHead) {
       eventQueue[queueTail].counterId = 2;
       eventQueue[queueTail].timestamp = currentTimestamp;
       queueTail = (queueTail + 1) % QUEUE_SIZE;
+      DEBUG_PRINT("Event added to queue for counter 2");
+    } else {
+      DEBUG_PRINT("Queue full, event for counter 2 dropped");
     }
     lastDebounceTime2 = currentMillis;
   }
@@ -114,10 +123,14 @@ void IRAM_ATTR counter3ISR() {
   unsigned long currentMillis = millis();
   if (currentMillis - lastDebounceTime3 > debounceDelay) {
     counter3Value++;
+    DEBUG_PRINT("Counter3 incremented: " + String(counter3Value));
     if ((queueTail + 1) % QUEUE_SIZE != queueHead) {
       eventQueue[queueTail].counterId = 3;
       eventQueue[queueTail].timestamp = currentTimestamp;
       queueTail = (queueTail + 1) % QUEUE_SIZE;
+      DEBUG_PRINT("Event added to queue for counter 3");
+    } else {
+      DEBUG_PRINT("Queue full, event for counter 3 dropped");
     }
     lastDebounceTime3 = currentMillis;
   }
@@ -132,7 +145,7 @@ void initWiFi() {
   DEBUG_PRINT("Connecting to WiFi ..");
   
   unsigned long startAttemptTime = millis();
-  const unsigned long wifiTimeout = 30000;
+  const unsigned long wifiTimeout = 60000; // Увеличено до 60 секунд
 
   while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < wifiTimeout) {
     if (millis() - lastBlinkMillis >= blinkInterval) {
@@ -140,7 +153,6 @@ void initWiFi() {
       digitalWrite(LED_PIN, ledState);
       lastBlinkMillis = millis();
     }
-    delay(100);
   }
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -180,7 +192,9 @@ unsigned long getTime() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  #ifdef DEBUG
+    Serial.begin(115200);
+  #endif
 
   pinMode(COUNTER1_PIN, INPUT_PULLUP);
   pinMode(COUNTER2_PIN, INPUT_PULLUP);
@@ -191,11 +205,42 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
+  // Мигаем LED 3 раза, чтобы показать начало setup()
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(200);
+    digitalWrite(LED_PIN, LOW);
+    delay(200);
+  }
+
+  DEBUG_PRINT("Setting up interrupts...");
   attachInterrupt(digitalPinToInterrupt(COUNTER1_PIN), counter1ISR, FALLING);
   attachInterrupt(digitalPinToInterrupt(COUNTER2_PIN), counter2ISR, FALLING);
   attachInterrupt(digitalPinToInterrupt(COUNTER3_PIN), counter3ISR, FALLING);
 
+  // Мигаем LED 1 раз, чтобы показать, что прерывания настроены
+  digitalWrite(LED_PIN, HIGH);
+  delay(500);
+  digitalWrite(LED_PIN, LOW);
+  delay(500);
+
+  DEBUG_PRINT("Initializing WiFi...");
   initWiFi();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    DEBUG_PRINT("WiFi failed to initialize, restarting...");
+    ESP.restart(); // Программный WIFI сброс
+  }
+
+  // Мигаем LED 2 раза, чтобы показать, что WiFi инициализирован
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(200);
+    digitalWrite(LED_PIN, LOW);
+    delay(200);
+  }
+
+  DEBUG_PRINT("Configuring time...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
   unsigned long ntpTimeout = millis();
@@ -217,9 +262,15 @@ void setup() {
   lastSyncTime = currentTimestamp;
   lastSyncMillis = millis();
 
+  DEBUG_PRINT("Mounting SPIFFS...");
   if (!SPIFFS.begin(true)) {
     DEBUG_PRINT("SPIFFS Mount Failed");
-    while (true);
+    while (true) {
+      digitalWrite(LED_PIN, HIGH); // Индикация ошибки
+      delay(500);
+      digitalWrite(LED_PIN, LOW);
+      delay(500);
+    }
   }
   DEBUG_PRINT("SPIFFS Mounted successfully");
 
@@ -227,13 +278,14 @@ void setup() {
   config.database_url = DATABASE_URL;
   config.token_status_callback = tokenStatusCallback;
   config.max_token_generation_retry = 5;
-  config.timeout.serverResponse = 10000;
+  config.timeout.serverResponse = 20000; // Увеличено до 20 секунд
+  config.timeout.wifiReconnect = 10000;
 
   auth.user.email = USER_EMAIL;
   auth.user.password = USER_PASSWORD;
 
   Firebase.reconnectWiFi(true);
-  fbdo.setResponseSize(8192);
+  fbdo.setResponseSize(16384); // Увеличено до 16 КБ
 
   DEBUG_PRINT("Initializing Firebase...");
   Firebase.begin(&config, &auth);
@@ -250,6 +302,17 @@ void setup() {
     String uidMessage = "User UID: ";
     uidMessage.concat(uid);
     DEBUG_PRINT(uidMessage);
+  }
+
+  // Тестовая запись в Firebase
+  if (Firebase.ready()) {
+    FirebaseJson testJson;
+    testJson.set("counterValue", 42);
+    if (Firebase.RTDB.setJSON(&fbdo, "/UsersData/" + uid + "/test", &testJson)) {
+      DEBUG_PRINT("Test data written successfully");
+    } else {
+      DEBUG_PRINT("Failed to write test data: " + fbdo.errorReason());
+    }
   }
 
   // Загрузка последних значений счетчиков из Firebase
@@ -294,6 +357,7 @@ void setup() {
             DEBUG_PRINT("No data for counter" + String(i + 1) + ", using 0");
           }
           json->iteratorEnd();
+          json->clear();
         } else {
           String errorReason = fbdo.errorReason();
           if (errorReason == "") errorReason = "Unknown error";
@@ -341,6 +405,13 @@ void loop() {
   http.handleClient();
   ftpSrv.handleFTP();
 
+  // Отладка состояния пинов
+  static unsigned long lastPinDebug = 0;
+  if (millis() - lastPinDebug >= 1000) {
+    DEBUG_PRINT("Pin states: COUNTER3=" + String(digitalRead(COUNTER3_PIN)) + ", RESET3=" + String(digitalRead(RESET3_PIN)));
+    lastPinDebug = millis();
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     if (millis() - lastBlinkMillis >= blinkInterval) {
       ledState = !ledState;
@@ -355,6 +426,7 @@ void loop() {
     }
     DEBUG_PRINT("WiFi disconnected, attempting to reconnect...");
     initWiFi();
+    Firebase.reconnectWiFi(true);
   }
 
   // Обработка пинов сброса
@@ -364,33 +436,35 @@ void loop() {
 
   for (int i = 0; i < 3; i++) {
     if (digitalRead(resetPins[i]) == LOW && millis() - lastResetTimes[i] > debounceDelay) {
+      DEBUG_PRINT("Reset triggered for counter " + String(i + 1) + " on pin " + String(resetPins[i]));
       if (*counters[i] > 0) {
         String storyPath = "/UsersData/" + uid + "/count_story/count-" + String(i + 1) + "/" + String(currentTimestamp);
         FirebaseJson json;
         json.set("counterValue", *counters[i]);
 
         if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
-          Serial.println("Writing to count_story: " + storyPath);
+          DEBUG_PRINT("Writing to count_story: " + storyPath);
           if (Firebase.RTDB.setJSON(&fbdo, storyPath.c_str(), &json)) {
-            Serial.println("Count story updated successfully for counter" + String(i + 1));
+            DEBUG_PRINT("Count story updated successfully for counter" + String(i + 1));
             *counters[i] = 0;
-            Serial.println("Counter" + String(i + 1) + " reset to 0");
+            DEBUG_PRINT("Counter" + String(i + 1) + " reset to 0");
 
             // Записываем событие с нулевым значением в count-X
             String eventPath = "/UsersData/" + uid + "/count-" + String(i + 1) + "/" + String(currentTimestamp);
             FirebaseJson resetJson;
             resetJson.set("counterValue", 0);
             if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &resetJson)) {
-              Serial.println("Reset event written to: " + eventPath);
+              DEBUG_PRINT("Reset event written to: " + eventPath);
             } else {
-              Serial.println("Failed to write reset event: " + fbdo.errorReason());
+              DEBUG_PRINT("Failed to write reset event: " + fbdo.errorReason());
             }
           } else {
-            Serial.println("Failed to update count_story: " + fbdo.errorReason());
+            DEBUG_PRINT("Failed to update count_story: " + fbdo.errorReason());
           }
         } else {
-          Serial.println("WiFi or Firebase not ready, skipping count_story write");
+          DEBUG_PRINT("WiFi or Firebase not ready, skipping count_story write");
         }
+        json.clear();
       }
       lastResetTimes[i] = millis();
     }
@@ -427,7 +501,7 @@ void loop() {
       queueStatus.concat(String(queueHead));
       queueStatus.concat(", tail: ");
       queueStatus.concat(String(queueTail));
-      Serial.println(queueStatus);
+      DEBUG_PRINT(queueStatus);
       queueEmptyLogged = true;
     }
 
@@ -437,13 +511,15 @@ void loop() {
       queueStatus.concat(String(queueHead));
       queueStatus.concat(", tail: ");
       queueStatus.concat(String(queueTail));
-      Serial.println(queueStatus);
+      DEBUG_PRINT(queueStatus);
 
       CounterEvent event;
       noInterrupts();
       event = eventQueue[queueHead];
       queueHead = (queueHead + 1) % QUEUE_SIZE;
       interrupts();
+
+      DEBUG_PRINT("Processing event for counter " + String(event.counterId) + " at timestamp " + String(event.timestamp));
 
       String eventPath = "/UsersData/";
       eventPath.concat(uid);
@@ -456,18 +532,19 @@ void loop() {
       json.set("counterValue", (event.counterId == 1) ? counter1Value : 
                               (event.counterId == 2) ? counter2Value : counter3Value);
 
-      Serial.println("Processing event...");
+      DEBUG_PRINT("Processing event...");
       if (WiFi.status() == WL_CONNECTED) {
-        Serial.println(String("Attempting to write to: ") + eventPath);
+        DEBUG_PRINT(String("Attempting to write to: ") + eventPath);
         if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &json)) {
-          Serial.println(String("Set event ok: ") + eventPath);
+          DEBUG_PRINT(String("Set event ok: ") + eventPath);
         } else {
-          Serial.println(String("Set event failed: ") + fbdo.errorReason());
+          DEBUG_PRINT(String("Set event failed: ") + fbdo.errorReason());
           Firebase.reconnectWiFi(true);
         }
       } else {
-        Serial.println("WiFi not connected, skipping Firebase write");
+        DEBUG_PRINT("WiFi not connected, skipping Firebase write");
       }
+      json.clear();
     }
   }
 }
