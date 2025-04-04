@@ -92,127 +92,268 @@ function setupUI(user) {
     gaugeB.draw();
     gaugeC.draw();
 
-    // Initialize charts
+    // Initialize charts (но не загружаем данные сразу)
     var chartA = createCounter1Chart();
     var chartB = createCounter2Chart();
     var chartC = createCounter3Chart();
 
-    // Set initial state of charts-div
+    // Set initial state of UI elements
+    cardsReadingsElement.style.display = cardsCheckboxElement.checked
+      ? "block"
+      : "none";
+    gaugesReadingsElement.style.display = gaugesCheckboxElement.checked
+      ? "block"
+      : "none";
     chartsDivElement.style.display = chartsCheckboxElement.checked
       ? "block"
       : "none";
+    tableContainerElement.style.display = "none"; // Таблица изначально скрыта
 
-    // Update counter values for cards and gauges
-    dbRef.on("value", (snapshot) => {
-      const data = snapshot.val() || {};
-      let latestTimestamp = 0;
-      let latestValues = { "count-1": 0, "count-2": 0, "count-3": 0 };
+    // Update counter values for cards and gauges (загружаем сразу)
+    counter1Element.innerHTML = "Loading...";
+    counter2Element.innerHTML = "Loading...";
+    counter3Element.innerHTML = "Loading...";
+    updateElement.innerHTML = "Loading...";
 
-      ["count-1", "count-2", "count-3"].forEach((counter) => {
-        const batches = data[counter] || {};
-        let latestCounterTimestamp = 0;
-        let latestCounterValue = 0;
+    ["count-1", "count-2", "count-3"].forEach((counter, index) => {
+      const counterRef = firebase.database().ref(`UsersData/${uid}/${counter}`);
 
-        // Проходим по всем порциям (batches)
-        Object.keys(batches).forEach((batchKey) => {
-          const events = batches[batchKey] || {};
-          // Получаем все временные метки событий в этой порции
-          const eventTimestamps = Object.keys(events)
-            .map(Number)
-            .sort((a, b) => b - a);
-          if (eventTimestamps.length > 0) {
-            const latestEventTimestamp = eventTimestamps[0]; // Самое последнее событие в порции
-            const value = events[latestEventTimestamp].counterValue || 0;
-            if (latestEventTimestamp > latestCounterTimestamp) {
-              latestCounterTimestamp = latestEventTimestamp;
-              latestCounterValue = value;
+      counterRef
+        .orderByKey()
+        .limitToLast(1)
+        .once(
+          "value",
+          (snapshot) => {
+            const batches = snapshot.val() || {};
+            const batchKeys = Object.keys(batches);
+
+            if (batchKeys.length === 0) {
+              if (index === 0) counter1Element.innerHTML = "0";
+              if (index === 1) counter2Element.innerHTML = "0";
+              if (index === 2) {
+                counter3Element.innerHTML = "0";
+                updateElement.innerHTML = "N/A";
+              }
+              updateGauge(
+                index === 0 ? gaugeA : index === 1 ? gaugeB : gaugeC,
+                0
+              );
+              return;
+            }
+
+            const latestBatchKey = batchKeys[0];
+            const batchRef = counterRef.child(latestBatchKey);
+
+            batchRef
+              .orderByKey()
+              .limitToLast(1)
+              .once(
+                "value",
+                (eventSnapshot) => {
+                  const events = eventSnapshot.val() || {};
+                  const eventKeys = Object.keys(events);
+
+                  if (eventKeys.length === 0) {
+                    if (index === 0) counter1Element.innerHTML = "0";
+                    if (index === 1) counter2Element.innerHTML = "0";
+                    if (index === 2) {
+                      counter3Element.innerHTML = "0";
+                      updateElement.innerHTML = "N/A";
+                    }
+                    updateGauge(
+                      index === 0 ? gaugeA : index === 1 ? gaugeB : gaugeC,
+                      0
+                    );
+                    return;
+                  }
+
+                  const latestEventKey = eventKeys[0];
+                  const latestValue = events[latestEventKey].counterValue || 0;
+                  const latestTimestamp = Number(latestEventKey);
+
+                  if (index === 0) counter1Element.innerHTML = latestValue;
+                  if (index === 1) counter2Element.innerHTML = latestValue;
+                  if (index === 2) {
+                    counter3Element.innerHTML = latestValue;
+                    updateElement.innerHTML = epochToDateTime(latestTimestamp);
+                  }
+                  updateGauge(
+                    index === 0 ? gaugeA : index === 1 ? gaugeB : gaugeC,
+                    latestValue
+                  );
+                },
+                (error) => {
+                  console.error(
+                    `Error loading latest event for ${counter}:`,
+                    error
+                  );
+                  if (index === 0) counter1Element.innerHTML = "Error";
+                  if (index === 1) counter2Element.innerHTML = "Error";
+                  if (index === 2) {
+                    counter3Element.innerHTML = "Error";
+                    updateElement.innerHTML = "Error";
+                  }
+                }
+              );
+          },
+          (error) => {
+            console.error(`Error loading latest batch for ${counter}:`, error);
+            if (index === 0) counter1Element.innerHTML = "Error";
+            if (index === 1) counter2Element.innerHTML = "Error";
+            if (index === 2) {
+              counter3Element.innerHTML = "Error";
+              updateElement.innerHTML = "Error";
             }
           }
-        });
+        );
 
-        latestValues[counter] = latestCounterValue;
-        if (latestCounterTimestamp > latestTimestamp) {
-          latestTimestamp = latestCounterTimestamp;
+      counterRef.on(
+        "child_added",
+        (snapshot) => {
+          const batchKey = snapshot.key;
+          const batchRef = counterRef.child(batchKey);
+
+          batchRef
+            .orderByKey()
+            .limitToLast(1)
+            .once("value", (eventSnapshot) => {
+              const events = eventSnapshot.val() || {};
+              const eventKeys = Object.keys(events);
+              if (eventKeys.length === 0) return;
+
+              const latestEventKey = eventKeys[0];
+              const latestValue = events[latestEventKey].counterValue || 0;
+              const latestTimestamp = Number(latestEventKey);
+
+              if (index === 0) counter1Element.innerHTML = latestValue;
+              if (index === 1) counter2Element.innerHTML = latestValue;
+              if (index === 2) {
+                counter3Element.innerHTML = latestValue;
+                updateElement.innerHTML = epochToDateTime(latestTimestamp);
+              }
+              updateGauge(
+                index === 0 ? gaugeA : index === 1 ? gaugeB : gaugeC,
+                latestValue
+              );
+            });
+        },
+        (error) => {
+          console.error(`Error in real-time listener for ${counter}:`, error);
         }
-      });
-
-      counter1Element.innerHTML = latestValues["count-1"];
-      counter2Element.innerHTML = latestValues["count-2"];
-      counter3Element.innerHTML = latestValues["count-3"];
-      updateGauge(gaugeA, latestValues["count-1"]);
-      updateGauge(gaugeB, latestValues["count-2"]);
-      updateGauge(gaugeC, latestValues["count-3"]);
-      updateElement.innerHTML = latestTimestamp
-        ? epochToDateTime(latestTimestamp)
-        : "N/A";
+      );
     });
 
-    // Load and update chart data
+    // Load and update chart data (функция определена, но вызывается только при включении графиков)
     function updateCharts() {
       chartRange = Number(chartsRangeInputElement.value) || 10;
       ["count-1", "count-2", "count-3"].forEach((counter, index) => {
         const counterRef = firebase
           .database()
           .ref(`UsersData/${uid}/${counter}`);
-        counterRef.off("child_added"); // Отключаем предыдущие слушатели
+        counterRef.off("child_added");
 
-        // Получаем все порции и собираем события
-        counterRef.once("value", (snapshot) => {
-          const batches = snapshot.val() || {};
+        const loadEventsForChart = async () => {
           let allEvents = [];
+          let lastBatchKey = null;
 
-          // Проходим по всем порциям
-          Object.keys(batches).forEach((batchKey) => {
-            const events = batches[batchKey] || {};
-            // Добавляем все события из порции в общий список
+          while (allEvents.length < chartRange) {
+            let query = counterRef.orderByKey();
+            if (lastBatchKey) {
+              query = query.endBefore(lastBatchKey);
+            }
+            query = query.limitToLast(1);
+
+            const snapshot = await query.once("value");
+            const batches = snapshot.val() || {};
+            const batchKeys = Object.keys(batches);
+
+            if (batchKeys.length === 0) break;
+
+            const batchKey = batchKeys[0];
+            lastBatchKey = batchKey;
+
+            const batchRef = counterRef.child(batchKey);
+            const batchSnapshot = await batchRef.once("value");
+            const events = batchSnapshot.val() || {};
+
             Object.keys(events).forEach((eventKey) => {
               allEvents.push({
                 timestamp: Number(eventKey),
                 value: events[eventKey].counterValue || 0,
               });
             });
-          });
 
-          // Сортируем события по временной метке и берем последние chartRange
+            if (batchKeys.length < 1) break;
+          }
+
           allEvents.sort((a, b) => a.timestamp - b.timestamp);
           const eventsToPlot = allEvents.slice(-chartRange);
 
-          // Очищаем график и добавляем точки
           const chart = index === 0 ? chartA : index === 1 ? chartB : chartC;
-          chart.series[0].setData([]); // Очищаем график
+          chart.series[0].setData([]);
           eventsToPlot.forEach((event) => {
             plotValues(chart, event.timestamp, event.value);
           });
+        };
+
+        loadEventsForChart().catch((error) => {
+          console.error(`Error loading chart data for ${counter}:`, error);
+          alert(`Failed to load chart data for ${counter}. Please try again.`);
         });
 
-        // Реальное время для всех новых порций
-        counterRef.on("child_added", (snapshot) => {
-          const batchKey = snapshot.key;
-          const events = snapshot.val() || {};
-          // Проходим по всем событиям в новой порции
-          Object.keys(events).forEach((eventKey) => {
-            const value = events[eventKey].counterValue || 0;
-            plotValues(
-              index === 0 ? chartA : index === 1 ? chartB : chartC,
-              Number(eventKey),
-              value
+        counterRef.on(
+          "child_added",
+          (snapshot) => {
+            const batchKey = snapshot.key;
+            const events = snapshot.val() || {};
+            Object.keys(events).forEach((eventKey) => {
+              const value = events[eventKey].counterValue || 0;
+              plotValues(
+                index === 0 ? chartA : index === 1 ? chartB : chartC,
+                Number(eventKey),
+                value
+              );
+            });
+          },
+          (error) => {
+            console.error(
+              `Error in chart real-time listener for ${counter}:`,
+              error
             );
-          });
-        });
+          }
+        );
       });
     }
-    chartsRangeInputElement.onchange = updateCharts;
-    updateCharts(); // Инициализируем графики при загрузке
+
+    // Вызываем updateCharts только при изменении диапазона или включении графиков
+    chartsRangeInputElement.onchange = () => {
+      if (chartsCheckboxElement.checked) {
+        updateCharts();
+      }
+    };
 
     // Checkbox event listeners
     cardsCheckboxElement.addEventListener("change", (e) => {
       cardsReadingsElement.style.display = e.target.checked ? "block" : "none";
     });
+
     gaugesCheckboxElement.addEventListener("change", (e) => {
       gaugesReadingsElement.style.display = e.target.checked ? "block" : "none";
     });
+
     chartsCheckboxElement.addEventListener("change", (e) => {
       chartsDivElement.style.display = e.target.checked ? "block" : "none";
+      if (e.target.checked) {
+        updateCharts(); // Загружаем данные для графиков только при включении
+      } else {
+        // Отключаем слушатели, чтобы не загружать данные, пока графики скрыты
+        ["count-1", "count-2", "count-3"].forEach((counter) => {
+          const counterRef = firebase
+            .database()
+            .ref(`UsersData/${uid}/${counter}`);
+          counterRef.off("child_added");
+        });
+      }
     });
 
     // Delete data functionality
@@ -235,30 +376,64 @@ function setupUI(user) {
     };
 
     function createTable() {
-      $("#tbody").empty(); // Очищаем таблицу
+      $("#tbody").empty();
+      tableContainerElement.innerHTML = "<p>Loading data...</p>";
+
       ["count-1", "count-2", "count-3"].forEach((counter) => {
         const counterRef = firebase
           .database()
           .ref(`UsersData/${uid}/${counter}`);
-        // Начальная загрузка последних 100 записей
-        counterRef.once("value", (snapshot) => {
-          const batches = snapshot.val() || {};
-          let allEvents = [];
 
-          // Проходим по всем порциям
-          Object.keys(batches).forEach((batchKey) => {
-            const events = batches[batchKey] || {};
+        const loadEventsForTable = async () => {
+          let allEvents = [];
+          let lastBatchKey = null;
+
+          while (allEvents.length < 100) {
+            let query = counterRef.orderByKey();
+            if (lastBatchKey) {
+              query = query.endBefore(lastBatchKey);
+            }
+            query = query.limitToLast(1);
+
+            const snapshot = await query.once("value");
+            const batches = snapshot.val() || {};
+            const batchKeys = Object.keys(batches);
+
+            if (batchKeys.length === 0) break;
+
+            const batchKey = batchKeys[0];
+            lastBatchKey = batchKey;
+
+            const batchRef = counterRef.child(batchKey);
+            const batchSnapshot = await batchRef.once("value");
+            const events = batchSnapshot.val() || {};
+
             Object.keys(events).forEach((eventKey) => {
               allEvents.push({
                 timestamp: Number(eventKey),
                 value: events[eventKey].counterValue || 0,
               });
             });
-          });
 
-          // Сортируем события по убыванию времени и берем последние 100
+            if (batchKeys.length < 1) break;
+          }
+
           allEvents.sort((a, b) => b.timestamp - a.timestamp);
           const eventsToDisplay = allEvents.slice(0, 100);
+
+          tableContainerElement.innerHTML = `
+            <table id="data-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Counter 1</th>
+                  <th>Counter 2</th>
+                  <th>Counter 3</th>
+                </tr>
+              </thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          `;
 
           eventsToDisplay.forEach((event) => {
             const epochTime = event.timestamp;
@@ -273,47 +448,64 @@ function setupUI(user) {
             $("#tbody").prepend(content);
           });
 
-          // Устанавливаем lastReadingTimestamps
           if (allEvents.length > 0) {
-            lastReadingTimestamps[counter] = allEvents[0].timestamp;
+            lastReadingTimestamps[counter] =
+              eventsToDisplay[eventsToDisplay.length - 1].timestamp;
           }
+        };
+
+        loadEventsForTable().catch((error) => {
+          console.error(`Error loading table data for ${counter}:`, error);
+          tableContainerElement.innerHTML =
+            "<p>Error loading data. Please try again.</p>";
         });
 
-        // Обновление таблицы в реальном времени
-        counterRef.on("child_added", (snapshot) => {
-          const batchKey = snapshot.key;
-          const events = snapshot.val() || {};
-          let newEvents = [];
+        counterRef.on(
+          "child_added",
+          (snapshot) => {
+            const batchKey = snapshot.key;
+            const events = snapshot.val() || {};
+            let newEvents = [];
 
-          // Собираем новые события
-          Object.keys(events).forEach((eventKey) => {
-            newEvents.push({
-              timestamp: Number(eventKey),
-              value: events[eventKey].counterValue || 0,
+            Object.keys(events).forEach((eventKey) => {
+              newEvents.push({
+                timestamp: Number(eventKey),
+                value: events[eventKey].counterValue || 0,
+              });
             });
-          });
 
-          // Сортируем новые события по убыванию времени
-          newEvents.sort((a, b) => b.timestamp - a.timestamp);
+            newEvents.sort((a, b) => b.timestamp - a.timestamp);
 
-          newEvents.forEach((event) => {
-            const epochTime = event.timestamp;
-            const timestamp = epochToDateTime(epochTime);
-            const value = event.value;
-            var content = "<tr>";
-            content += "<td>" + timestamp + "</td>";
-            content += "<td>" + (counter === "count-1" ? value : "-") + "</td>";
-            content += "<td>" + (counter === "count-2" ? value : "-") + "</td>";
-            content += "<td>" + (counter === "count-3" ? value : "-") + "</td>";
-            content += "</tr>";
-            $("#tbody").prepend(content);
-            lastReadingTimestamps[counter] = epochTime;
-          });
-        });
+            newEvents.forEach((event) => {
+              const epochTime = event.timestamp;
+              const timestamp = epochToDateTime(epochTime);
+              const value = event.value;
+              var content = "<tr>";
+              content += "<td>" + timestamp + "</td>";
+              content +=
+                "<td>" + (counter === "count-1" ? value : "-") + "</td>";
+              content +=
+                "<td>" + (counter === "count-2" ? value : "-") + "</td>";
+              content +=
+                "<td>" + (counter === "count-3" ? value : "-") + "</td>";
+              content += "</tr>";
+              $("#tbody").prepend(content);
+            });
+          },
+          (error) => {
+            console.error(
+              `Error in table real-time listener for ${counter}:`,
+              error
+            );
+          }
+        );
       });
     }
 
     function appendToTable() {
+      loadDataButtonElement.disabled = true;
+      loadDataButtonElement.innerText = "Loading...";
+
       ["count-1", "count-2", "count-3"].forEach((counter) => {
         const counterRef = firebase
           .database()
@@ -322,29 +514,44 @@ function setupUI(user) {
           console.warn(
             `lastReadingTimestamps[${counter}] is null, skipping append for this counter`
           );
+          loadDataButtonElement.disabled = false;
+          loadDataButtonElement.innerText = "Load More";
           return;
         }
 
-        counterRef.once("value", (snapshot) => {
-          const batches = snapshot.val() || {};
+        const loadMoreEventsForTable = async () => {
           let allEvents = [];
+          let lastBatchKey = lastReadingTimestamps[counter].toString();
 
-          // Проходим по всем порциям
-          Object.keys(batches).forEach((batchKey) => {
-            const events = batches[batchKey] || {};
+          while (allEvents.length < 100) {
+            const query = counterRef
+              .orderByKey()
+              .endBefore(lastBatchKey)
+              .limitToLast(1);
+            const snapshot = await query.once("value");
+            const batches = snapshot.val() || {};
+            const batchKeys = Object.keys(batches);
+
+            if (batchKeys.length === 0) break;
+
+            const batchKey = batchKeys[0];
+            lastBatchKey = batchKey;
+
+            const batchRef = counterRef.child(batchKey);
+            const batchSnapshot = await batchRef.once("value");
+            const events = batchSnapshot.val() || {};
+
             Object.keys(events).forEach((eventKey) => {
               const timestamp = Number(eventKey);
-              // Добавляем только события, которые старше lastReadingTimestamps
-              if (timestamp < lastReadingTimestamps[counter]) {
-                allEvents.push({
-                  timestamp: timestamp,
-                  value: events[eventKey].counterValue || 0,
-                });
-              }
+              allEvents.push({
+                timestamp: timestamp,
+                value: events[eventKey].counterValue || 0,
+              });
             });
-          });
 
-          // Сортируем события по убыванию времени и берем последние 100
+            if (batchKeys.length < 1) break;
+          }
+
           allEvents.sort((a, b) => b.timestamp - a.timestamp);
           const eventsToAppend = allEvents.slice(0, 100);
 
@@ -361,11 +568,20 @@ function setupUI(user) {
             $("#tbody").append(content);
           });
 
-          // Обновляем lastReadingTimestamps, если есть более старые события
-          if (allEvents.length > 0) {
+          if (eventsToAppend.length > 0) {
             lastReadingTimestamps[counter] =
-              allEvents[allEvents.length - 1].timestamp;
+              eventsToAppend[eventsToAppend.length - 1].timestamp;
           }
+
+          loadDataButtonElement.disabled = false;
+          loadDataButtonElement.innerText = "Load More";
+        };
+
+        loadMoreEventsForTable().catch((error) => {
+          console.error(`Error appending table data for ${counter}:`, error);
+          loadDataButtonElement.disabled = false;
+          loadDataButtonElement.innerText = "Load More";
+          alert(`Failed to load more data for ${counter}. Please try again.`);
         });
       });
     }
@@ -375,7 +591,7 @@ function setupUI(user) {
       viewDataButtonElement.style.display = "none";
       hideDataButtonElement.style.display = "inline-block";
       loadDataButtonElement.style.display = "inline-block";
-      createTable();
+      createTable(); // Загружаем данные для таблицы только при нажатии
     });
 
     loadDataButtonElement.addEventListener("click", appendToTable);
@@ -385,6 +601,13 @@ function setupUI(user) {
       viewDataButtonElement.style.display = "inline-block";
       hideDataButtonElement.style.display = "none";
       loadDataButtonElement.style.display = "none";
+      // Отключаем слушатели, чтобы не загружать данные, пока таблица скрыта
+      ["count-1", "count-2", "count-3"].forEach((counter) => {
+        const counterRef = firebase
+          .database()
+          .ref(`UsersData/${uid}/${counter}`);
+        counterRef.off("child_added");
+      });
     });
   } else {
     loginElement.style.display = "block";
