@@ -180,6 +180,34 @@ hr {
   }
 }
 
+.content-sign-in p {
+  margin: 10px 0;
+}
+.content-sign-in label {
+  margin-right: 10px;
+}
+.content-sign-in select {
+  padding: 5px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+.content-sign-in select:focus {
+  outline: none;
+  border-color: #4caf50;
+}
+
+#charts-points-select {
+  display: inline-block;
+  padding: 5px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+#charts-div p {
+  display: block;
+}
+
 /* Change styles for cancel button and delete button on extra small screens */
 @media screen and (max-width: 300px) {
   .cancelbtn,

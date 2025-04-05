@@ -25,6 +25,7 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <!-- Stylesheet -->
     <link rel="stylesheet" type="text/css" href="/style.css" />
+    <!-- Additional Styles -->
   </head>
 
   <body>
@@ -72,8 +73,8 @@
     <div class="content-sign-in" id="content-sign-in" style="display: none">
       <p>
         <span class="date-time"
-          >Останнє оновлення: <span id="lastUpdate"></span
-        ></span>
+          >Останнє оновлення: <span id="lastUpdate">Завантаження...</span></span
+        >
       </p>
       <p>
         Карточки:
@@ -130,8 +131,14 @@
       </div>
       <div id="charts-div" style="display: none">
         <p>
-          Кількість записів:
-          <input type="number" id="charts-range" value="10" />
+          <label for="charts-points-select">Кількість точок на графіку:</label>
+          <select id="charts-points-select">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="0">Всі</option>
+          </select>
         </p>
         <div id="chart-counter1" class="chart-container"></div>
         <div id="chart-counter2" class="chart-container"></div>

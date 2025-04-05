@@ -36,7 +36,9 @@ String uid;
 // Structure to hold counter event data
 struct CounterEvent {
   int counterId;
-  unsigned long timestamp;
+  unsigned long timestamp; // Временная метка в секундах
+  unsigned long millisTimestamp; // Миллисекунды для уникальности
+  int counterValue;
 };
 
 // Queue for counter events
@@ -131,11 +133,13 @@ void processCounterEvent(int counterId, volatile int& counterValue) {
   if (nextTail != queueHead) {
     eventQueue[queueTail].counterId = counterId;
     eventQueue[queueTail].timestamp = currentTimestamp;
-    queueTail = nextTail;
+    eventQueue[queueTail].millisTimestamp = millis(); // Сохраняем текущие миллисекунды
+    eventQueue[queueTail].counterValue = counterValue;
     DEBUG_PRINT("Event added to queue for counter " + String(counterId));
   } else {
     DEBUG_PRINT("Queue full, event for counter " + String(counterId) + " dropped");
   }
+  queueTail = nextTail;
 }
 
 // Initialize WiFi с явным указанием DNS
@@ -335,7 +339,7 @@ void setup() {
         FirebaseJson initJson;
         FirebaseJson eventData;
         eventData.set("counterValue", 0);
-        initJson.set(String(currentTimestamp), eventData);
+        initJson.set(String(currentTimestamp) + "000", eventData);
         String initPath = path + "/" + String(currentTimestamp);
         if (Firebase.RTDB.setJSON(&fbdo, initPath.c_str(), &initJson)) {
           DEBUG_PRINT("Initialized counter" + String(i) + " with 0");
@@ -525,13 +529,14 @@ void loop() {
             DEBUG_PRINT("Counter" + String(i + 1) + " reset to 0");
 
             // Записываем событие с нулевым значением в count-X
-            String eventPath = "/UsersData/" + uid + "/count-" + String(i + 1) + "/" + String(currentTimestamp);
-            FirebaseJson resetJson;
+            String batchPath = "/UsersData/" + uid + "/count-" + String(i + 1) + "/" + String(currentTimestamp);
+            FirebaseJson batchData;
+            String eventKey = String(currentTimestamp) + String(millis() % 1000);
             FirebaseJson eventData;
             eventData.set("counterValue", 0);
-            resetJson.set(String(currentTimestamp), eventData);
-            if (Firebase.RTDB.setJSON(&fbdo, eventPath.c_str(), &resetJson)) {
-              DEBUG_PRINT("Reset event written to: " + eventPath);
+            batchData.set(eventKey, eventData);
+            if (Firebase.RTDB.setJSON(&fbdo, batchPath.c_str(), &batchData)) {
+              DEBUG_PRINT("Reset event written to: " + batchPath);
             } else {
               DEBUG_PRINT("Failed to write reset event: " + fbdo.errorReason());
             }
@@ -574,7 +579,7 @@ void loop() {
   if (millis() - lastCleanup >= 3600000) { // Раз в час
     for (int i = 1; i <= 3; i++) {
       String path = "/UsersData/" + uid + "/count-" + String(i);
-      cleanupOldEvents(path, 10); // Храним только последние 10 пачек (по 10 событий = 100 событий)
+      cleanupOldEvents(path, 10); // Храним только последние 10 пачек
     }
     lastCleanup = millis();
   }
@@ -632,10 +637,11 @@ void loop() {
         break;
       }
 
-      // Создаем массивы для группировки событий по счетчикам
-      FirebaseJson batchData[3]; // Один JSON для каждого счетчика (count-1, count-2, count-3)
-      unsigned long batchTimestamps[3] = {0, 0, 0}; // Временная метка первой записи в пачке для каждого счетчика
+      // Создаем одну пачку для каждого счетчика
+      std::vector<FirebaseJson> batchData(3); // Массив для хранения данных по каждому счетчику
+      std::vector<bool> hasEvents(3, false); // Флаги, чтобы отслеживать, есть ли события для счетчика
       int eventsProcessed = 0;
+      unsigned long batchTimestamp = 0; // Временная метка для пачки (первого события)
 
       // Обрабатываем события порцией
       while (queueHead != queueTail && eventsProcessed < batchSize) {
@@ -647,22 +653,25 @@ void loop() {
 
         DEBUG_PRINT("Processing event for counter " + String(event.counterId) + " at timestamp " + String(event.timestamp));
 
-        // Определяем индекс счетчика (0 для count-1, 1 для count-2, 2 для count-3)
-        int counterIndex = event.counterId - 1;
-
-        // Если это первое событие в пачке, сохраняем временную метку
-        if (batchTimestamps[counterIndex] == 0) {
-          batchTimestamps[counterIndex] = event.timestamp;
+        // Если это первое событие, используем его временную метку как ключ пачки
+        if (eventsProcessed == 0) {
+          batchTimestamp = event.timestamp;
         }
+
+        // Формируем уникальный ключ для события
+        String eventKey = String(event.timestamp);
+        String millisPart = String(event.millisTimestamp % 1000);
+        while (millisPart.length() < 3) millisPart = "0" + millisPart; // Дополняем нули слева
+        eventKey += millisPart;
 
         // Создаем JSON-объект для события
         FirebaseJson eventData;
-        eventData.set("counterValue", (event.counterId == 1) ? counter1Value : 
-                                      (event.counterId == 2) ? counter2Value : counter3Value);
+        eventData.set("counterValue", event.counterValue);
 
-        // Добавляем событие в batchData с временной меткой как ключом
-        String eventKey = String(event.timestamp);
+        // Добавляем событие в соответствующую пачку для счетчика
+        int counterIndex = event.counterId - 1;
         batchData[counterIndex].set(eventKey, eventData);
+        hasEvents[counterIndex] = true;
 
         eventsProcessed++;
       }
@@ -671,42 +680,33 @@ void loop() {
       if (WiFi.status() == WL_CONNECTED && WiFi.RSSI() > -80 && eventsProcessed > 0) {
         bool allSuccess = true;
         for (int i = 0; i < 3; i++) {
-          if (batchTimestamps[i] == 0) continue; // Пропускаем счетчики без событий
-
-          // Формируем путь для пачки (без префикса batch_)
-          String batchPath = "/UsersData/";
-          batchPath.concat(uid);
-          batchPath.concat("/count-");
-          batchPath.concat(String(i + 1));
-          batchPath.concat("/");
-          batchPath.concat(String(batchTimestamps[i]));
-
-          // Отправляем пачку с повторными попытками
-          const int maxRetryAttempts = 3;
-          int retryAttempt = 0;
-          bool success = false;
-          while (retryAttempt < maxRetryAttempts && !success) {
-            if (Firebase.RTDB.setJSON(&fbdo, batchPath.c_str(), &batchData[i])) {
-              DEBUG_PRINT("Batch written to: " + batchPath);
-              lastFirebaseWrite = millis();
-              success = true;
-            } else {
-              DEBUG_PRINT("Failed to write batch for counter " + String(i + 1) + " (attempt " + String(retryAttempt + 1) + "): " + fbdo.errorReason());
-              if (fbdo.errorReason() == "Permission denied") {
-                DEBUG_PRINT("Permission denied, attempting to re-authenticate...");
-                Firebase.reconnectWiFi(true);
-                Firebase.begin(&config, &auth);
+          if (hasEvents[i]) {
+            String batchPath = "/UsersData/" + uid + "/count-" + String(i + 1) + "/" + String(batchTimestamp);
+            const int maxRetryAttempts = 3;
+            int retryAttempt = 0;
+            bool success = false;
+            while (retryAttempt < maxRetryAttempts && !success) {
+              if (Firebase.RTDB.setJSON(&fbdo, batchPath.c_str(), &batchData[i])) {
+                DEBUG_PRINT("Batch written to: " + batchPath + " with events for counter " + String(i + 1));
+                lastFirebaseWrite = millis();
+                success = true;
+              } else {
+                DEBUG_PRINT("Failed to write batch for counter " + String(i + 1) + " (attempt " + String(retryAttempt + 1) + "): " + fbdo.errorReason());
+                if (fbdo.errorReason() == "Permission denied") {
+                  DEBUG_PRINT("Permission denied, attempting to re-authenticate...");
+                  Firebase.reconnectWiFi(true);
+                  Firebase.begin(&config, &auth);
+                }
+                retryAttempt++;
+                delay(2000);
               }
-              retryAttempt++;
-              delay(2000); // Задержка 2 секунды перед повторной попыткой
+            }
+            if (!success) {
+              allSuccess = false;
+              break;
             }
           }
-          if (!success) {
-            allSuccess = false;
-            break;
-          }
         }
-
         if (!allSuccess) {
           DEBUG_PRINT("Max retry attempts reached, rolling back queue");
           noInterrupts();
