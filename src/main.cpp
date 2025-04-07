@@ -5,7 +5,7 @@
 #include "counter.h"
 #include "network.h"
 #include "time_utils.h"
-#include "firebase_utils.h" // TokenHelper.h подключен только через firebase_utils.cpp
+#include "firebase_utils.h"
 
 const int LED_PIN = 2;
 
@@ -49,9 +49,43 @@ void loop() {
     processCounterEvent(3, counter3Value);
   }
 
+  ResetEvent resetEvent = checkAndResetCounters();
+  if (resetEvent.triggered) {
+    if (resetEvent.previousValue > 0) {
+      String storyPath = "/UsersData/" + uid + "/count_story/count-" + String(resetEvent.counterId) + "/" + String(currentTimestamp);
+      FirebaseJson json;
+      json.set("counterValue", resetEvent.previousValue);
+
+      if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
+        DEBUG_PRINT("Writing to count_story: " + storyPath);
+        if (Firebase.RTDB.setJSON(&fbdo, storyPath.c_str(), &json)) {
+          DEBUG_PRINT("Count story updated successfully for counter" + String(resetEvent.counterId));
+
+          // Записываем событие с нулевым значением в count-X
+          String batchPath = "/UsersData/" + uid + "/count-" + String(resetEvent.counterId) + "/" + String(currentTimestamp);
+          FirebaseJson batchData;
+          String eventKey = String(currentTimestamp) + String(millis() % 1000);
+          FirebaseJson eventData;
+          eventData.set("counterValue", 0);
+          batchData.set(eventKey, eventData);
+          if (Firebase.RTDB.setJSON(&fbdo, batchPath.c_str(), &batchData)) {
+            DEBUG_PRINT("Reset event written to: " + batchPath);
+          } else {
+            DEBUG_PRINT("Failed to write reset event: " + fbdo.errorReason());
+          }
+        } else {
+          DEBUG_PRINT("Failed to update count_story: " + fbdo.errorReason());
+        }
+      } else {
+        DEBUG_PRINT("WiFi or Firebase not ready, skipping count_story write");
+      }
+      json.clear();
+    }
+  }
+
   http.handleClient();
   ftpSrv.handleFTP();
   updateTime();
   processQueue();
-  updateLed(); // Добавляем управление светодиодом
+  updateLed();
 }
