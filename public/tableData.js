@@ -1,5 +1,9 @@
 async function createTable(uid) {
-  showLoadingSpinner(tableContainerElement);
+  // Создаем спиннер
+  const spinner = document.createElement("div");
+  spinner.className = "spinner";
+  spinner.innerText = "Loading...";
+  tableContainerElement.appendChild(spinner);
 
   const counters = ["count-1", "count-2", "count-3"];
   counters.forEach((counter) => {
@@ -146,12 +150,23 @@ async function createTable(uid) {
       </table>
     `;
 
-    tableContainerElement.innerHTML = tableHTML;
+    // Удаляем спиннер
+    spinner.remove();
+    // Обновляем содержимое таблицы
+    const tableElement = tableContainerElement.querySelector("#data-table");
+    if (tableElement) {
+      tableElement.outerHTML = tableHTML;
+    } else {
+      tableContainerElement.innerHTML =
+        tableHTML + tableContainerElement.querySelector("p").outerHTML;
+    }
     return lastReadingTimestamps;
   } catch (error) {
     console.error("Error loading table data:", error);
+    spinner.remove();
     tableContainerElement.innerHTML =
-      "<p>Error loading data. Please try again.</p>";
+      "<p>Error loading data. Please try again.</p>" +
+      tableContainerElement.querySelector("p").outerHTML;
     return lastReadingTimestamps;
   }
 }

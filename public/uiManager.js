@@ -44,5 +44,9 @@ async function setupUI(user) {
 }
 
 function showLoadingSpinner(container) {
-  container.innerHTML = '<div class="spinner">Loading...</div>';
+  const spinner = document.createElement("div");
+  spinner.className = "spinner";
+  spinner.innerText = "Loading...";
+  container.appendChild(spinner);
+  return spinner; // Возвращаем спиннер, чтобы его можно было удалить позже
 }

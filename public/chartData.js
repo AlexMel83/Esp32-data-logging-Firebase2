@@ -5,7 +5,14 @@ async function initializeCharts() {
 }
 
 async function updateCharts(uid) {
-  showLoadingSpinner(chartsDivElement);
+  // Создаем элемент спиннера
+  const spinner = showLoadingSpinner(chartsDivElement);
+  spinner.className = "spinner";
+  spinner.innerText = "Loading...";
+
+  // Добавляем спиннер в chartsDivElement, не затрагивая существующие элементы
+  chartsDivElement.appendChild(spinner);
+
   chartRange = Number(chartsPointsSelectElement.value);
   if (chartRange === 0) chartRange = Infinity;
 
@@ -122,14 +129,22 @@ async function updateCharts(uid) {
 
   try {
     await Promise.all(promises);
-    chartsDivElement.innerHTML = "";
+    spinner.remove();
+    const chartContainers =
+      chartsDivElement.querySelectorAll(".chart-container");
+    chartContainers.forEach((container) => container.remove());
     if (chartT) chartsDivElement.appendChild(chartT.container);
     if (chartH) chartsDivElement.appendChild(chartH.container);
     if (chartP) chartsDivElement.appendChild(chartP.container);
   } catch (error) {
     console.error("Error loading charts:", error);
-    chartsDivElement.innerHTML =
-      "<p>Error loading charts. Please try again.</p>";
+    spinner.remove();
+    const chartContainers =
+      chartsDivElement.querySelectorAll(".chart-container");
+    chartContainers.forEach((container) => container.remove());
+    const errorMessage = document.createElement("p");
+    errorMessage.innerHTML = "Error loading charts. Please try again.";
+    chartsDivElement.appendChild(errorMessage);
     alert("Failed to load charts. Please try again.");
   }
 }
