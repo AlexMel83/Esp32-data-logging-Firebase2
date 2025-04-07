@@ -10,6 +10,7 @@ struct CounterEvent {
   unsigned long timestamp;
   unsigned long millisTimestamp;
   int counterValue;
+  int sequence;
 };
 
 extern CounterEvent eventQueue[QUEUE_SIZE];

@@ -55,7 +55,7 @@ void loadInitialCounterValues() {
         FirebaseJson initJson;
         FirebaseJson eventData;
         eventData.set("counterValue", 0);
-        initJson.set(String(currentTimestamp) + "000", eventData);
+        initJson.set(String(currentTimestamp) + "-00000", eventData); // Новый формат ключа
         String initPath = path + "/" + String(currentTimestamp);
         if (Firebase.RTDB.setJSON(&fbdo, initPath.c_str(), &initJson)) {
           DEBUG_PRINT("Initialized counter" + String(i) + " with 0");
@@ -76,25 +76,24 @@ void loadInitialCounterValues() {
         if (batchCount > 0) {
           String batchKey, batchValue;
           int type;
-          json->iteratorGet(0, type, batchKey, batchValue); // Последняя пачка
+          json->iteratorGet(0, type, batchKey, batchValue);
 
           FirebaseJson batchJson;
           batchJson.setJsonData(batchValue);
           size_t eventCount = batchJson.iteratorBegin();
-          unsigned long latestTimestamp = 0;
+          String latestKey = "";
           int lastValue = 0;
 
-          // Ищем последнее событие в пачке
+          // Ищем последнее событие, сравнивая ключи как строки
           for (size_t j = 0; j < eventCount; j++) {
             String eventKey, eventValue;
             int eventType;
             batchJson.iteratorGet(j, eventType, eventKey, eventValue);
-            unsigned long eventTimestamp = eventKey.toInt();
-            if (eventTimestamp > latestTimestamp) {
+            if (eventKey > latestKey) { // Лексикографическое сравнение строк
               FirebaseJsonData result;
               batchJson.get(result, eventKey + "/counterValue");
               if (result.success) {
-                latestTimestamp = eventTimestamp;
+                latestKey = eventKey;
                 lastValue = result.to<int>();
               }
             }
@@ -145,10 +144,10 @@ void processQueue() {
 
         if (eventsProcessed == 0) batchTimestamp = event.timestamp;
 
-        // Формируем ключ с миллисекундами
-        String millisPart = String(event.millisTimestamp % 1000);
-        while (millisPart.length() < 3) millisPart = "0" + millisPart;
-        String eventKey = String(event.timestamp) + millisPart;
+        // Формируем ключ в формате timestamp-sequence
+        String sequencePart = String(event.sequence);
+        while (sequencePart.length() < 5) sequencePart = "0" + sequencePart; // Дополняем нули до 5 цифр
+        String eventKey = String(event.timestamp) + "-" + sequencePart;
 
         FirebaseJson eventData;
         eventData.set("counterValue", event.counterValue);

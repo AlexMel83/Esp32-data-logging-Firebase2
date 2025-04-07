@@ -1,6 +1,6 @@
 #include "counter.h"
 #include "debug.h"
-#include "time_utils.h" // Добавляем для доступа к currentTimestamp
+#include "time_utils.h"
 
 CounterEvent eventQueue[QUEUE_SIZE];
 volatile int queueHead = 0;
@@ -22,6 +22,8 @@ const int RESET2_PIN = 33;
 const int RESET3_PIN = 25;
 
 const unsigned long debounceDelay = 500;
+
+static int eventSequence = 0; // Счетчик последовательности событий
 
 void IRAM_ATTR counter1ISR() {
   static unsigned long lastTrigger = 0;
@@ -61,9 +63,10 @@ void processCounterEvent(int counterId, volatile int& counterValue) {
   int nextTail = (queueTail + 1) % QUEUE_SIZE;
   if (nextTail != queueHead) {
     eventQueue[queueTail].counterId = counterId;
-    eventQueue[queueTail].timestamp = currentTimestamp; // Используем глобальную метку времени
+    eventQueue[queueTail].timestamp = currentTimestamp;
     eventQueue[queueTail].millisTimestamp = millis();
     eventQueue[queueTail].counterValue = counterValue;
+    eventQueue[queueTail].sequence = eventSequence++; // Присваиваем порядковый номер
     DEBUG_PRINT("Event added to queue for counter " + String(counterId));
     queueTail = nextTail;
   } else {
