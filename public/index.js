@@ -3,11 +3,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   auth.onAuthStateChanged((user) => {
     if (user) {
-      console.log("user logged in");
-      console.log(user);
       initializeDashboard(user);
-      const uid = user.uid;
-      console.log("User UID:", uid);
     } else {
       console.log("user logged out");
       setupUI();

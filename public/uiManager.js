@@ -1,5 +1,4 @@
 async function setupUI(user) {
-  console.log("setupUI called with user:", user);
   if (!user) {
     loginElement.style.display = "block";
     authBarElement.style.display = "none";
@@ -15,7 +14,6 @@ async function setupUI(user) {
   userDetailsElement.innerHTML = user.email;
 
   const uid = user.uid;
-  console.log("User UID:", uid);
 
   if (uid !== "cRtGblv0T3R2vXazmLnjTSNrlpJ3") {
     console.error(

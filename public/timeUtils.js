@@ -1,8 +1,10 @@
 function epochToJsDate(epochTime) {
-  // Извлекаем часть до дефиса
   const seconds = Number(String(epochTime).split("-")[0]);
-  // Преобразуем секунды в миллисекунды
-  return new Date(seconds * 1000);
+  // Check if the timestamp is already in milliseconds (13 digits) or seconds (10 digits)
+  if (String(seconds).length > 11) {
+    return new Date(seconds); // Already in milliseconds
+  }
+  return new Date(seconds * 1000); // Convert seconds to milliseconds
 }
 
 function epochToDateTime(epochTime) {
