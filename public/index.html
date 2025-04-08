@@ -29,172 +29,198 @@
   </head>
 
   <body>
-    <!-- TOP BAR -->
-    <div class="topnav">
-      <h1>
-        Лічильники зібраних акумуляторів <i class="fas fa-clipboard-list"></i>
-      </h1>
-    </div>
-
-    <!-- AUTHENTICATION BAR -->
-    <div id="authentication-bar" style="display: none">
-      <p>
-        <span id="authentication-status">Користувач авторизований</span>
-        <span id="user-details">USEREMAIL</span>
-        <a href="/" id="logout-link">Вийти</a>
-      </p>
-    </div>
-
-    <!-- LOGIN FORM -->
-    <form id="login-form" style="display: none">
-      <div class="form-elements-container">
-        <label for="input-email"><b>Email</b></label>
-        <input
-          type="text"
-          placeholder="Enter Username"
-          id="input-email"
-          required
-        />
-
-        <label for="input-password"><b>Пароль</b></label>
-        <input
-          type="password"
-          placeholder="Enter Password"
-          id="input-password"
-          required
-        />
-
-        <button type="submit" id="login-button">Увійти</button>
-        <p id="error-message" style="color: red"></p>
-      </div>
-    </form>
-
-    <!-- CONTENT -->
-    <div class="content-sign-in" id="content-sign-in" style="display: none">
-      <p>
-        <span class="date-time"
-          >Останнє оновлення: <span id="lastUpdate">Завантаження...</span></span
-        >
-      </p>
-      <p>
-        Карточки:
-        <input
-          type="checkbox"
-          id="cards-checkbox"
-          name="cards-checkbox"
-          checked
-        />
-        Індикатори:
-        <input
-          type="checkbox"
-          id="gauges-checkbox"
-          name="gauges-checkbox"
-          checked
-        />
-        Графіки:
-        <input type="checkbox" id="charts-checkbox" name="charts-checkbox" />
-      </p>
-      <div id="cards-div">
-        <div class="cards">
-          <div class="card">
-            <p>
-              <i class="fas fa-thermometer-half" style="color: #059e8a"></i>
-              Лінія "А"
-            </p>
-            <p>
-              <span class="reading"><span id="counter1"></span> шт.</span>
-            </p>
-          </div>
-          <div class="card">
-            <p><i class="fas fa-tint" style="color: #00add6"></i> Лінія "Б"</p>
-            <p>
-              <span class="reading"><span id="counter2"></span> шт.</span>
-            </p>
-          </div>
-          <div class="card">
-            <p>
-              <i class="fas fa-angle-double-down" style="color: #e1e437"></i>
-              Лінія "В"
-            </p>
-            <p>
-              <span class="reading"><span id="counter3"></span> шт.</span>
-            </p>
-          </div>
+    <div class="page-container">
+      <div class="content-wrapper">
+        <!-- TOP BAR -->
+        <div class="topnav">
+          <h1>
+            Лічильники зібраних акумуляторів
+            <i class="fas fa-clipboard-list"></i>
+          </h1>
         </div>
-      </div>
-      <div id="gauges-div">
-        <div class="cards">
-          <div class="card"><canvas id="gauge-line-a"></canvas></div>
-          <div class="card"><canvas id="gauge-line-b"></canvas></div>
-          <div class="card"><canvas id="gauge-line-c"></canvas></div>
+
+        <!-- AUTHENTICATION BAR -->
+        <div id="authentication-bar" style="display: none">
+          <p>
+            <span id="authentication-status">Користувач авторизований</span>
+            <span id="user-details">USEREMAIL</span>
+            <a href="/" id="logout-link">Вийти</a>
+          </p>
         </div>
-      </div>
-      <div id="charts-div" style="display: none">
-        <p>
-          <label for="charts-points-select">Кількість точок на графіку:</label>
-          <select id="charts-points-select">
-            <option value="10">10</option>
-            <option value="20">20</option>
-            <option value="50" selected>50</option>
-            <option value="100">100</option>
-            <option value="0">Всі</option>
-          </select>
-        </p>
-        <div id="chart-counter1" class="chart-container"></div>
-        <div id="chart-counter2" class="chart-container"></div>
-        <div id="chart-counter3" class="chart-container"></div>
-      </div>
-      <p>
-        <button id="view-data-button">Переглянути всі дані</button>
-        <button id="hide-data-button" style="display: none">
-          Сховати дані
-        </button>
-        <button id="delete-button" class="deletebtn">Видалити дані</button>
-      </p>
-      <div id="delete-modal" class="modal" style="display: none">
-        <span
-          onclick="document.getElementById('delete-modal').style.display='none'"
-          class="close"
-          title="Close Modal"
-          >×</span
-        >
-        <form id="delete-data-form" class="modal-content" action="/">
-          <div class="container">
-            <h1>Видалити дані</h1>
-            <p>Ви впевнені, що хочете видалити дані?</p>
-            <div class="clearfix">
-              <button
-                type="button"
-                onclick="document.getElementById('delete-modal').style.display='none'"
-                class="cancelbtn"
-              >
-                Відміна
-              </button>
-              <button
-                type="submit"
-                onclick="document.getElementById('delete-modal').style.display='none'"
-                class="deletebtn"
-              >
-                Видалити
-              </button>
-            </div>
+
+        <!-- LOGIN FORM -->
+        <form id="login-form" style="display: none">
+          <div class="form-elements-container">
+            <label for="input-email"><b>Email</b></label>
+            <input
+              type="text"
+              placeholder="Enter Username"
+              id="input-email"
+              required
+            />
+
+            <label for="input-password"><b>Пароль</b></label>
+            <input
+              type="password"
+              placeholder="Enter Password"
+              id="input-password"
+              required
+            />
+
+            <button type="submit" id="login-button">Увійти</button>
+            <p id="error-message" style="color: red"></p>
           </div>
         </form>
-      </div>
-      <div class="cards">
-        <div class="card" id="table-container" style="display: none">
-          <table id="readings-table">
-            <tr id="theader">
-              <th>Час</th>
-              <th>Лінія "А" (шт)</th>
-              <th>Лінія "Б" (шт)</th>
-              <th>Лінія "В" (шт)</th>
-            </tr>
-            <tbody id="tbody"></tbody>
-          </table>
-          <p><button id="load-data" style="display: none">Більше...</button></p>
+
+        <!-- CONTENT -->
+        <div class="content-sign-in" id="content-sign-in" style="display: none">
+          <p>
+            <span class="date-time"
+              >Останнє оновлення:
+              <span id="lastUpdate">Завантаження...</span></span
+            >
+          </p>
+          <p>
+            Карточки:
+            <input
+              type="checkbox"
+              id="cards-checkbox"
+              name="cards-checkbox"
+              checked
+            />
+            Індикатори:
+            <input
+              type="checkbox"
+              id="gauges-checkbox"
+              name="gauges-checkbox"
+              checked
+            />
+            Графіки:
+            <input
+              type="checkbox"
+              id="charts-checkbox"
+              name="charts-checkbox"
+            />
+          </p>
+          <div id="cards-div">
+            <div class="cards">
+              <div class="card">
+                <p>
+                  <i class="fas fa-thermometer-half" style="color: #059e8a"></i>
+                  Лінія "А"
+                </p>
+                <p>
+                  <span class="reading"><span id="counter1"></span> шт.</span>
+                </p>
+              </div>
+              <div class="card">
+                <p>
+                  <i class="fas fa-tint" style="color: #00add6"></i> Лінія "Б"
+                </p>
+                <p>
+                  <span class="reading"><span id="counter2"></span> шт.</span>
+                </p>
+              </div>
+              <div class="card">
+                <p>
+                  <i
+                    class="fas fa-angle-double-down"
+                    style="color: #e1e437"
+                  ></i>
+                  Лінія "В"
+                </p>
+                <p>
+                  <span class="reading"><span id="counter3"></span> шт.</span>
+                </p>
+              </div>
+            </div>
+          </div>
+          <div id="gauges-div">
+            <div class="cards">
+              <div class="card"><canvas id="gauge-line-a"></canvas></div>
+              <div class="card"><canvas id="gauge-line-b"></canvas></div>
+              <div class="card"><canvas id="gauge-line-c"></canvas></div>
+            </div>
+          </div>
+          <div id="charts-div" style="display: none">
+            <p>
+              <label for="charts-points-select"
+                >Кількість точок на графіку:</label
+              >
+              <select id="charts-points-select">
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="0">Всі</option>
+              </select>
+            </p>
+            <div id="chart-counter1" class="chart-container"></div>
+            <div id="chart-counter2" class="chart-container"></div>
+            <div id="chart-counter3" class="chart-container"></div>
+          </div>
+          <p>
+            <button id="view-data-button">Переглянути всі дані</button>
+            <button id="hide-data-button" style="display: none">
+              Сховати дані
+            </button>
+            <button id="delete-button" class="deletebtn">Видалити дані</button>
+          </p>
+          <div id="delete-modal" class="modal" style="display: none">
+            <span
+              onclick="document.getElementById('delete-modal').style.display='none'"
+              class="close"
+              title="Close Modal"
+              >×</span
+            >
+            <form id="delete-data-form" class="modal-content" action="/">
+              <div class="container">
+                <h1>Видалити дані</h1>
+                <p>Ви впевнені, що хочете видалити дані?</p>
+                <div class="clearfix">
+                  <button
+                    type="button"
+                    onclick="document.getElementById('delete-modal').style.display='none'"
+                    class="cancelbtn"
+                  >
+                    Відміна
+                  </button>
+                  <button
+                    type="submit"
+                    onclick="document.getElementById('delete-modal').style.display='none'"
+                    class="deletebtn"
+                  >
+                    Видалити
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+          <div class="cards">
+            <div class="card" id="table-container" style="display: none">
+              <table id="readings-table">
+                <tr id="theader">
+                  <th>Час</th>
+                  <th>Лінія "А" (шт)</th>
+                  <th>Лінія "Б" (шт)</th>
+                  <th>Лінія "В" (шт)</th>
+                </tr>
+                <tbody id="tbody"></tbody>
+              </table>
+              <p>
+                <button id="load-data" style="display: none">Більше...</button>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- FOOTER -->
+      <footer class="footer">
+        <a href="https://it.starkon.pp.ua" target="_blank">
+          © 2025 Розроблено Олександром Мелешко it@starkon.pp.ua</a
+        >
+      </footer>
     </div>
 
     <!-- Firebase Initialization -->

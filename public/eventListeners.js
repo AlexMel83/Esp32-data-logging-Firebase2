@@ -51,6 +51,7 @@ function setupEventListeners(uid, gaugeA, gaugeB, gaugeC) {
   deleteDataFormElement.addEventListener("submit", async (e) => {
     e.preventDefault();
 
+    // Очищаем активные слушатели
     ["cards", "charts", "tables"].forEach((type) => {
       Object.keys(activeListeners[type]).forEach((counter) => {
         Object.values(activeListeners[type][counter]).forEach((listener) => {
@@ -63,15 +64,28 @@ function setupEventListeners(uid, gaugeA, gaugeB, gaugeC) {
     });
 
     const dbRef = firebase.database().ref(`UsersData/${uid}`);
-    await dbRef.remove();
-    deleteModalElement.style.display = "none";
 
-    setupCounterListeners(uid, gaugeA, gaugeB, gaugeC);
-    if (chartsCheckboxElement.checked) {
-      updateCharts(uid);
-    }
-    if (tableContainerElement.style.display === "block") {
-      createTable(uid);
+    try {
+      await dbRef.remove();
+      deleteModalElement.style.display = "none";
+
+      // Обновляем интерфейс после успешного удаления
+      setupCounterListeners(uid, gaugeA, gaugeB, gaugeC);
+      if (chartsCheckboxElement.checked) {
+        updateCharts(uid);
+      }
+      if (tableContainerElement.style.display === "block") {
+        createTable(uid);
+      }
+    } catch (error) {
+      console.error("Failed to delete data:", error);
+      if (error.code === "PERMISSION_DENIED") {
+        alert(
+          "Помилка: У вас немає прав на видалення даних. Будь ласка, зверніться до адміністратора."
+        );
+      } else {
+        alert("Виникла помилка при видаленні даних: " + error.message);
+      }
     }
   });
 
