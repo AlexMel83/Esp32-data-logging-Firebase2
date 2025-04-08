@@ -4,11 +4,11 @@ document.addEventListener("DOMContentLoaded", function () {
   // Listen for auth status changes
   auth.onAuthStateChanged((user) => {
     if (user) {
-      console.log("user logged in");
-      console.log(user);
+      // console.log("user logged in");
+      // console.log(user);
       setupUI(user); // Вызываем setupUI из index.js
       const uid = user.uid;
-      console.log("User UID:", uid);
+      // console.log("User UID:", uid);
     } else {
       console.log("user logged out");
       setupUI(); // Вызываем setupUI из index.js

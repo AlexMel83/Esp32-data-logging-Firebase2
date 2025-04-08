@@ -20,6 +20,7 @@ void setup() {
   setupCounters();
   initWiFi();
   initTime();
+  SPIFFS.format(); 
   if (!SPIFFS.begin(true)) {
     DEBUG_PRINT("SPIFFS Mount Failed");
     while (true) delay(1000);

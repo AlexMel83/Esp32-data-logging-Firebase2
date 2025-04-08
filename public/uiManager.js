@@ -13,20 +13,10 @@ async function setupUI(user) {
   userDetailsElement.style.display = "block";
   userDetailsElement.innerHTML = user.email;
 
-  const uid = user.uid;
+  // console.log("Real UID:", user.uid);
+  const uid = "cRtGblv0T3R2vXazmLnjTSNrlpJ3"; // псевдо UID, если нужно подменить
+  // console.log("Fake UID:", uid);
 
-  if (uid !== "cRtGblv0T3R2vXazmLnjTSNrlpJ3") {
-    console.error(
-      "UID mismatch! Expected: cRtGblv0T3R2vXazmLnjTSNrlpJ3, Got:",
-      uid
-    );
-    alert(
-      "UID mismatch! Please ensure you are logged in with the correct user."
-    );
-    return false;
-  }
-
-  // Set initial state of UI elements
   cardsReadingsElement.style.display = cardsCheckboxElement.checked
     ? "block"
     : "none";
@@ -46,5 +36,5 @@ function showLoadingSpinner(container) {
   spinner.className = "spinner";
   spinner.innerText = "Loading...";
   container.appendChild(spinner);
-  return spinner; // Возвращаем спиннер, чтобы его можно было удалить позже
+  return spinner;
 }

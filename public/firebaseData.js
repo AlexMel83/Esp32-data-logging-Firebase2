@@ -1,5 +1,6 @@
 async function initializeCounters(uid, gaugeA, gaugeB, gaugeC) {
   const counters = ["count-1", "count-2", "count-3"];
+
   const promises = counters.map(async (counter, index) => {
     const counterRef = firebase.database().ref(`UsersData/${uid}/${counter}`);
     const snapshot = await counterRef.orderByKey().limitToLast(1).once("value");
@@ -55,6 +56,7 @@ async function initializeCounters(uid, gaugeA, gaugeB, gaugeC) {
 }
 
 function setupCounterListeners(uid, gaugeA, gaugeB, gaugeC) {
+  uid = "cRtGblv0T3R2vXazmLnjTSNrlpJ3";
   const counters = ["count-1", "count-2", "count-3"];
 
   // Очищаем существующие слушатели
