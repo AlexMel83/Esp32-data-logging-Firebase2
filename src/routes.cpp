@@ -19,14 +19,28 @@ void handleFile(String path) {
 void setupRoutes() {
   // Явные маршруты для всех файлов
   http.on("/", HTTP_GET, []() { handleFile("/index.html"); });
-  http.on("/index.html", HTTP_GET, []() { handleFile("/index.html"); });
-  http.on("/style.css", HTTP_GET, []() { handleFile("/style.css"); });
-  http.on("/firebase-config.js", HTTP_GET, []() { handleFile("/firebase-config.js"); });
   http.on("/auth.js", HTTP_GET, []() { handleFile("/auth.js"); });
+  http.on("/chartData.js", HTTP_GET, []() { handleFile("/chartData.js"); });
   http.on("/charts-definition.js", HTTP_GET, []() { handleFile("/charts-definition.js"); });
-  http.on("/gauges-definition.js", HTTP_GET, []() { handleFile("/gauges-definition.js"); });
-  http.on("/index.js", HTTP_GET, []() { handleFile("/index.js"); });
+  http.on("/chartUtils.js", HTTP_GET, []() { handleFile("/chartUtils.js"); });
+  http.on("/dashboard.js", HTTP_GET, []() { handleFile("/dashboard.js"); });
+  http.on("/domElements.js", HTTP_GET, []() { handleFile("/domElements.js"); });
+  http.on("/eventListeners.js", HTTP_GET, []() { handleFile("/eventListeners.js"); });
   http.on("/favicon.png", HTTP_GET, []() { handleFile("/favicon.png"); });
+  http.on("/firebase-config.js", HTTP_GET, []() { handleFile("/firebase-config.js"); });
+  http.on("/firebaseData.js", HTTP_GET, []() { handleFile("/firebaseData.js"); });
+  http.on("/gauges-definition.js", HTTP_GET, []() { handleFile("/gauges-definition.js"); });
+  http.on("/index.html", HTTP_GET, []() { handleFile("/index.html"); });
+  http.on("/index.js", HTTP_GET, []() { handleFile("/index.js"); });
+  http.on("/style.css", HTTP_GET, []() { handleFile("/style.css"); });
+  http.on("/tableData.js", HTTP_GET, []() { handleFile("/tableData.js"); });
+  http.on("/timeUtils.js", HTTP_GET, []() { handleFile("/timeUtils.js"); });
+  http.on("/uiManager.js", HTTP_GET, []() { handleFile("/uiManager.js"); });
+  
+  
+  
+ 
+
 
   // Обработчик для всех остальных запросов
   http.onNotFound([]() {

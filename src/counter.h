@@ -32,10 +32,20 @@ extern const int RESET1_PIN;
 extern const int RESET2_PIN;
 extern const int RESET3_PIN;
 
+extern const unsigned long debounceDelay;
+
 void counter1ISR();
 void counter2ISR();
 void counter3ISR();
 void processCounterEvent(int counterId, volatile int& counterValue);
 void setupCounters();
+
+struct ResetEvent {
+  bool triggered;
+  int counterId;
+  int previousValue;
+};
+
+ResetEvent checkAndResetCounters();
 
 #endif
