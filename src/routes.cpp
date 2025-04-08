@@ -19,8 +19,8 @@ void handleFile(String path) {
 void setupRoutes() {
   // Явные маршруты для всех файлов
   http.on("/", HTTP_GET, []() { handleFile("/index.html"); });
-  http.on("/auth.js", HTTP_GET, []() { handleFile("/chartData.js"); });
-  http.on("/chartData.js", HTTP_GET, []() { handleFile("/auth.js"); });
+  http.on("/auth.js", HTTP_GET, []() { handleFile("/auth.js"); });
+  http.on("/chartData.js", HTTP_GET, []() { handleFile("/chartData.js"); });
   http.on("/charts-definition.js", HTTP_GET, []() { handleFile("/charts-definition.js"); });
   http.on("/chartUtils.js", HTTP_GET, []() { handleFile("/chartUtils.js"); });
   http.on("/dashboard.js", HTTP_GET, []() { handleFile("/dashboard.js"); });

@@ -148,6 +148,3 @@ async function updateCharts(uid) {
     alert("Failed to load charts. Please try again.");
   }
 }
-
-window.initializeCharts = initializeCharts;
-window.updateCharts = updateCharts;
