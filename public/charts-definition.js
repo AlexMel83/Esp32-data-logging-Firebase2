@@ -25,6 +25,9 @@ function createCounter1Chart() {
     },
     yAxis: { title: { text: "Кількість (шт)" } },
     credits: { enabled: false },
+    accessibility: {
+      enabled: false,
+    },
   });
   chartT = chart;
   return chart;
@@ -55,6 +58,9 @@ function createCounter2Chart() {
     },
     yAxis: { title: { text: "Кількість (шт)" } },
     credits: { enabled: false },
+    accessibility: {
+      enabled: false,
+    },
   });
   chartH = chart;
   return chart;
@@ -85,6 +91,9 @@ function createCounter3Chart() {
     },
     yAxis: { title: { text: "Кількість (шт)" } },
     credits: { enabled: false },
+    accessibility: {
+      enabled: false,
+    },
   });
   chartP = chart;
   return chart;
