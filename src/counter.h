@@ -47,5 +47,6 @@ struct ResetEvent {
 };
 
 ResetEvent checkAndResetCounters();
+//
 
 #endif

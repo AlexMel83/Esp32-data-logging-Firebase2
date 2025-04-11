@@ -7,6 +7,19 @@ html {
 body {
   margin: 0;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh; /* Минимальная высота страницы — вся высота окна */
+}
+
+.page-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh; /* Контейнер занимает всю высоту */
+}
+
+.content-wrapper {
+  flex: 1 0 auto; /* Контент растягивается, чтобы заполнить пространство */
 }
 
 .topnav {
@@ -206,6 +219,25 @@ hr {
 }
 #charts-div p {
   display: block;
+}
+/* Footer Styles */
+.footer {
+  background-color: #049faa;
+  color: white;
+  padding: 10px;
+  text-align: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+  bottom: 0;
+}
+
+.footer a {
+  color: white;
+  text-decoration: none;
+}
+
+.footer a:hover {
+  text-decoration: underline;
 }
 
 /* Change styles for cancel button and delete button on extra small screens */
